@@ -205,9 +205,10 @@ def write_excel_file():
             if is_number(reqd_tests):
                 reqd_tests = int(round(float(reqd_tests), 0))
                 row.append(reqd_tests)
-                row.append('O')
-                style = [i + 2, len(row)]
-                Insufficient_Tests_Dict[rt_no] = None
+                if reqd_tests > 0:
+                    row.append('O')
+                    style = [i + 2, len(row)]
+                    Insufficient_Tests_Dict[rt_no] = None
         test_list_ws.append(row)
         if style:
             style_cell(test_list_ws, style[0], style[1])
