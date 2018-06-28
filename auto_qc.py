@@ -164,11 +164,9 @@ def style_cell(ws, row, col):
     c.font = FONT_CHECKMARK
     c.alignment = Alignment(horizontal='center')
 
-def write_excel_file():
-    global Section_No_Dict, Section_No_List, Summary_Stats_List, Station_Data_List, Insufficient_Tests_Dict
+def write_test_list_ws(wb):
+    global Insufficient_Tests_Dict
     spec_rows = get_spec()
-    wb = load_workbook(TEMPLATE_FILE)
-    
     test_list_ws = wb.worksheets[1]
     if 'test list' in wb:
         test_list_ws = wb['test list']
@@ -213,6 +211,7 @@ def write_excel_file():
         if style:
             style_cell(test_list_ws, style[0], style[1])
 
+def write_summary_ws(wb):
     summary_ws = wb.worksheets[0]
     if 'summary' in wb:
         summary_ws = wb['summary']
@@ -227,6 +226,7 @@ def write_excel_file():
         if not s.rt_no_check:
             style_cell(summary_ws, i + 2, 10)
 
+def write_station_ws(wb):
     # write station data
     if not 'Stations' in wb:
         wb.create_sheet('Stations')
@@ -245,7 +245,12 @@ def write_excel_file():
             style_cell(stations_ws, i + 2, len(row) - 1)
         if checks[1]:
             style_cell(stations_ws, i + 2, len(row))
-        
+
+def write_excel_file():
+    wb = load_workbook(TEMPLATE_FILE)
+    write_test_list_ws(wb)
+    write_summary_ws(wb)
+    write_station_ws(wb)
     qc_file = os.path.join(QC_PATH, PROJECT_NAME + '_qc.xlsx')
     wb.save(qc_file)
     return qc_file
@@ -312,10 +317,10 @@ def process_mdb_data(mdb_file_name, stations_rows, drops_rows):
     global Drops_List
     station_ids = {}
     for row in drops_rows:
-        rowAsList = [x for x in row]
-        for i in range(5,12):
+        rowAsList = [mdb_file_name] + [x for x in row]
+        for i in range(6,13):
             if rowAsList[i] < rowAsList[i + 1]:
-                station_ids[str(rowAsList[0])] = None
+                station_ids[str(rowAsList[1])] = None
                 rowAsList.append('O')
                 break
         Drops_List.append(rowAsList)
@@ -364,11 +369,11 @@ def query_mdb_data(mdb_files):
 
         drops_query = 'SELECT * FROM Drops;'
         drops_rows = cursor.execute(drops_query).fetchall()
-        drops_fields = [column[0] for column in cursor.description]
-        drops_fields.append('Increasing Deflection')
-
+        
         global Drops_Headers
         if not Drops_Headers:
+            drops_fields = ['File'] + [column[0] for column in cursor.description]
+            drops_fields.append('Increasing Deflection')
             Drops_Headers = drops_fields
 
         cursor.close()
