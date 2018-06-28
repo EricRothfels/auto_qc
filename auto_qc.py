@@ -232,20 +232,19 @@ def write_excel_file():
         wb.create_sheet('Stations')
     stations_ws = wb['Stations']
     for i,row in enumerate(Station_Data_List):
-        rowAsList = [x for x in row]
         rt_no = Section_No_List[i]
-        rowAsList.insert(8, rt_no)
+        row.insert(9, rt_no)
         checks = ['', '']
-        if str(rowAsList[1]) in Station_IDs_Dict:
+        if str(row[2]) + row[0] in Station_IDs_Dict:
             checks[0] = 'O'
         if rt_no in Insufficient_Tests_Dict:
             checks[1] = 'O'
-        rowAsList.extend(checks)
-        stations_ws.append(rowAsList)
+        row.extend(checks)
+        stations_ws.append(row)
         if checks[0]:
-            style_cell(stations_ws, i + 2, len(rowAsList) - 1)
+            style_cell(stations_ws, i + 2, len(row) - 1)
         if checks[1]:
-            style_cell(stations_ws, i + 2, len(rowAsList))
+            style_cell(stations_ws, i + 2, len(row))
         
     qc_file = os.path.join(QC_PATH, PROJECT_NAME + '_qc.xlsx')
     wb.save(qc_file)
@@ -276,7 +275,7 @@ def write_kml_file():
     data = []
     i = 0
     for row in Station_Data_List:
-        data.append([row[8], Section_No_List[i], [(row[20], row[19])]])
+        data.append([row[9], Section_No_List[i], [(row[21], row[20])]])
         i += 1
     file_path = os.path.join(QC_PATH, PROJECT_NAME + '_qc.kml')
     write_kml(file_path, data, 'blue')
@@ -291,7 +290,7 @@ def write_bad_sections_kml():
     for row in Station_Data_List:
         rt_no = Section_No_List[i]
         if rt_no in Insufficient_Tests_Dict:
-            data.append([row[8], rt_no, [(row[20], row[19])]])
+            data.append([row[9], rt_no, [(row[21], row[20])]])
         i += 1
     write_kml(os.path.join(QC_PATH, PROJECT_NAME + ' Sections with Insufficient Tests.kml'), data, 'red')
 
@@ -324,8 +323,8 @@ def process_mdb_data(mdb_file_name, stations_rows, drops_rows):
     if station_ids:
         ids = station_ids.keys()
         station_ids = 'Station ID ' + ', '.join(ids)
-        for s in ids:
-            Station_IDs_Dict[s] = None
+        for stn in ids:
+            Station_IDs_Dict[stn + mdb_file_name] = stn
     else:
         station_ids = ''
     summary_stats = Summary_Stats(mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
@@ -337,7 +336,9 @@ def process_mdb_data(mdb_file_name, stations_rows, drops_rows):
     section_no_list = get_section_no_list(stations_rows)
     Section_No_List.extend(section_no_list)
     add_to_dict(Section_No_Dict, section_no_list, mdb_file_name)
-    Station_Data_List.extend(stations_rows)
+    for row in stations_rows:
+        rowAsList = [mdb_file_name] + [x for x in row]
+        Station_Data_List.append(rowAsList)
 
 def check_coords(lats,longs):
         avg_lat = mean(lats)
