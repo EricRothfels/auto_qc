@@ -373,7 +373,7 @@ def query_mdb_data(mdb_files):
         global Drops_Headers
         if not Drops_Headers:
             drops_fields = ['File'] + [column[0] for column in cursor.description]
-            drops_fields.append('Increasing Deflection')
+            drops_fields.append('Decreasing Deflections')
             Drops_Headers = drops_fields
 
         cursor.close()
