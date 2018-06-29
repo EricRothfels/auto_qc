@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import pyodbc
 from openpyxl import load_workbook
-from openpyxl.styles import Font, Alignment
+from openpyxl.styles import Font, Alignment, PatternFill, NamedStyle
 import sys, os, re, subprocess
 import traceback
 from io import StringIO
@@ -258,12 +258,22 @@ def write_excel_file():
 def write_drops_file():
     wb = load_workbook(DROPS_TEPLATE)
     drops_ws = wb.worksheets[0]
+    highlight = NamedStyle(name="highlight")
+    highlight.fill = PatternFill("solid", fgColor="f5b7b1")
+
     for col, header in enumerate(Drops_Headers, start=1):
         drops_ws.cell(row=1, column=col).value = header
     for i,row in enumerate(Drops_List):
         drops_ws.append(row)
         if row[-1] is 'O':
             style_cell(drops_ws, i + 2, len(row))
+            for j in range(6,13):
+                if row[j] < row[j + 1]:
+                    # highlight this cell
+                    xls_cell = drops_ws.cell(row=i + 2, column=j + 2)
+                    xls_cell.style = highlight
+                    
+
         
     drops_file = os.path.join(QC_PATH, PROJECT_NAME + '_drops.xlsx')
     wb.save(drops_file)
@@ -399,7 +409,7 @@ def set_global_vars():
                 path = wd
                 ftypes = [('Excel files', '*.xls;*.xlsx;*.xlsm;')]
                 options = {'title':'Select the QC Specification Excel File', 'filetypes':ftypes}
-                wd = left(wd,'field_data\\fwd')
+                wd = left(wd,'field_data')
                 if len(wd) < len(path):
                     fwd_dir = os.path.join(wd,'specification')
                     if os.path.isdir(fwd_dir):
@@ -407,6 +417,8 @@ def set_global_vars():
                         fwd_dir = os.path.join(wd, 'fwd')
                         if os.path.isdir(fwd_dir):
                             wd = fwd_dir
+                        elif os.path.isdir(os.path.join(wd, 'fwd_setup')):
+                            wd = os.path.join(wd, 'fwd_setup')
                     options['initialdir'] = wd
                 while True:
                     wf = filedialog.askopenfilename(**options)
