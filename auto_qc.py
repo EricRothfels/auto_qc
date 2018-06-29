@@ -23,20 +23,19 @@ PROJECT_NAME = ''
 
 Summary_Stats_List = []
 Section_No_Dict = {}
-Station_Data_List = []
-Section_No_List = []
+Data_List = []
 Station_IDs_Dict = {}
 Insufficient_Tests_Dict = {}
-Drops_List = []
+All_Data_List = []
 
-Drops_Headers = None
+All_Data_Headers = None
+Data_Headers_Dict = None
 
 tk_root = None
 tk_chkbox = None
 #DATE_RE = '_(0[1-9]|1[012])(0[1-9]|[12][0-9]|3[01])[0-9]{2}\.mdb$'
 MDB_RE = '\.mdb$'
-#GEP = 'C:\\Program Files\\Google\\Google Earth Pro\\client\\googleearth.exe'
-PYTHON_DIR = 'C:\\ESRI\\Python2.7'
+PYTHON_DIR = ['C:\\Python27', 'C:\\ESRI\\Python2.7', 'C:\\Python2.7', 'C:\\ESRI\\Python27']
 FONT_CHECKMARK = Font(name='Wingdings 2', size=11, bold=True)
 ARCGIS_PY_SCRIPT = os.path.join(CWD, 'gen_arcgis_file.py')
 MAKE_ARCGIS_FILE = False
@@ -78,12 +77,13 @@ def is_mdb_file(file):
 
 def find_python27():
     r = 'python.exe'
-    if os.path.isdir(PYTHON_DIR):
-        for _path, subFolders, files in os.walk(PYTHON_DIR):
-            for file_name in files:
-                m = re.match(r, file_name)
-                if m:
-                    return os.path.join(_path, file_name)
+    for path in PYTHON_DIR:
+        if os.path.isdir(path):
+            for _path, subFolders, files in os.walk(path):
+                for file_name in files:
+                    m = re.match(r, file_name)
+                    if m:
+                        return os.path.join(_path, file_name)
     return False
 
 def find_mdb_files(path):
@@ -94,14 +94,6 @@ def find_mdb_files(path):
                 file_path = os.path.join(_path, file_name)
                 files_dict[file_name] = ((file_name, file_path))
     return sorted(files_dict.values())
-
-def get_section_no_list(stations_rows):
-    section_no_list = []
-    for row in stations_rows:
-        slab_id = row[8]
-        section_no = left(slab_id, '-')
-        section_no_list.append(section_no)
-    return section_no_list
 
 def add_to_dict(_dict, section_no_list, mdb_file_name):
     for section_no in section_no_list:
@@ -144,20 +136,15 @@ def get_spec():
         rows.append(r)
     return rows
 
-def get_col(headers, header_name):
-    try:
-        return headers.index(header_name)
-    except:
-        return None
+def get_col(header_name):
+    if header_name.upper() in Data_Headers_Dict:
+        return Data_Headers_Dict[header_name.upper()]
 
-def get_col_no(headers, name_list):
-    index = None
-    fields = [h.upper() for h in headers]
+def get_col_no(name_list):
     for name in name_list:
-        index = get_col(fields, name.upper())
+        index = get_col(name)
         if index:
-            break
-    return index
+            return index
 
 def style_cell(ws, row, col):
     c = ws.cell(row=row, column=col)
@@ -231,9 +218,27 @@ def write_station_ws(wb):
     if not 'Stations' in wb:
         wb.create_sheet('Stations')
     stations_ws = wb['Stations']
-    for i,row in enumerate(Station_Data_List):
-        rt_no = Section_No_List[i]
-        row.insert(9, rt_no)
+
+    highlight = NamedStyle(name="highlight")
+    highlight.fill = PatternFill("solid", fgColor="f5b7b1")
+
+    for col, header in enumerate(All_Data_Headers, start=1):
+        stations_ws.cell(row=1, column=col).value = header
+    for i,row in enumerate(Drops_List):
+        stations_ws.append(row)
+        if row[-1] is 'O':
+            style_cell(stations_ws, i + 2, len(row))
+            for j in range(6,13):
+                if row[j] < row[j + 1]:
+                    # highlight this cell
+                    xls_cell = stations_ws.cell(row=i + 2, column=j + 2)
+                    xls_cell.style = highlight
+
+    drops_file = os.path.join(QC_PATH, PROJECT_NAME + '_drops.xlsx')
+    wb.save(drops_file)
+
+    
+    for i,row in enumerate(Data_List):
         checks = ['', '']
         if str(row[2]) + row[0] in Station_IDs_Dict:
             checks[0] = 'O'
@@ -255,29 +260,6 @@ def write_excel_file():
     wb.save(qc_file)
     return qc_file
 
-def write_drops_file():
-    wb = load_workbook(DROPS_TEPLATE)
-    drops_ws = wb.worksheets[0]
-    highlight = NamedStyle(name="highlight")
-    highlight.fill = PatternFill("solid", fgColor="f5b7b1")
-
-    for col, header in enumerate(Drops_Headers, start=1):
-        drops_ws.cell(row=1, column=col).value = header
-    for i,row in enumerate(Drops_List):
-        drops_ws.append(row)
-        if row[-1] is 'O':
-            style_cell(drops_ws, i + 2, len(row))
-            for j in range(6,13):
-                if row[j] < row[j + 1]:
-                    # highlight this cell
-                    xls_cell = drops_ws.cell(row=i + 2, column=j + 2)
-                    xls_cell.style = highlight
-                    
-
-        
-    drops_file = os.path.join(QC_PATH, PROJECT_NAME + '_drops.xlsx')
-    wb.save(drops_file)
-
 def write_kml(file_path, data, color):
     kml = simplekml.Kml()
     for row in data:
@@ -288,38 +270,66 @@ def write_kml(file_path, data, color):
 
 def write_kml_file():
     data = []
-    i = 0
-    for row in Station_Data_List:
+    for i,row in enumerate(Data_List):
         data.append([row[9], Section_No_List[i], [(row[21], row[20])]])
-        i += 1
     file_path = os.path.join(QC_PATH, PROJECT_NAME + '_qc.kml')
     write_kml(file_path, data, 'blue')
     return file_path
+
+def write_bad_drops_kml():
+    data = []
+    for i,row in enumerate(Drops_List):
+        if row[-1] is 'O':
+            data.append([row[9], rt_no, [(row[21], row[20])]])
+    if data:
+        write_kml(os.path.join(QC_PATH, PROJECT_NAME + ' Sections with Insufficient Tests.kml'), data, 'red')
 
 def write_bad_sections_kml():
     if not Insufficient_Tests_Dict:
         return
     #headers = ('Section No', 'Slab ID', 'Latitude', 'Longitude')
     data = []
-    i = 0
-    for row in Station_Data_List:
+    for i,row in enumerate(Data_List):
         rt_no = Section_No_List[i]
         if rt_no in Insufficient_Tests_Dict:
             data.append([row[9], rt_no, [(row[21], row[20])]])
-        i += 1
     write_kml(os.path.join(QC_PATH, PROJECT_NAME + ' Sections with Insufficient Tests.kml'), data, 'red')
 
-def process_mdb_data(mdb_file_name, stations_rows, drops_rows):
-    stations_data = [*zip(*stations_rows)]
-    #summary stats
-    completed_tests = len(stations_rows)
-    max_station = round(max(stations_data[2]), 1)
-    min_surface_temp = round(min(stations_data[12]), 1)
-    max_surface_temp = round(max(stations_data[12]), 1)
-    min_air_temp = round(min(stations_data[13]), 1)
-    max_air_temp = round(max(stations_data[13]), 1)
+def check_coords(lats,longs):
+        avg_lat = mean(lats)
+        avg_long = mean(longs)
+        '''
+        for lat in lats:
+            if lat <= avg_lat + 2 or lat >= avg_lat - 2:'''
 
-    time = stations_data[15]
+def get_section_no(row):
+    if 'SlabID' in Data_Headers_Dict:
+        slab_id = Data_Headers_Dict[]
+        return left(slab_id, '-')
+
+def process_mdb_data(mdb_file_name, data_rows, data_headers):
+    global All_Data_Headers, Data_Headers_Dict
+    if not All_Data_Headers:
+        data_headers = ['FILE'] + [col[0].upper() for col in data_headers] + ['DECREASING DEFLECTIONS', 'INSUFFICIENT FIELD TESTS']
+        All_Data_Headers = data_headers
+        Data_Headers_Dict = {data_headers[i]: i for i in range(0, len(data_headers))}
+
+    section_no_list = get_section_no_list(data_rows)
+    for row in data_rows:
+        row = [mdb_file_name] + [x for x in row]
+        row.insert(8, get_section_no(row))
+        Data_List.append(row)
+
+    data_transposed = [*zip(*data_rows)]
+    #summary stats
+    completed_tests = len(data_rows)
+    max_station = round(max(data_transposed[2]), 1)
+    min_surface_temp = round(min(data_transposed[12]), 1)
+    max_surface_temp = round(max(data_transposed[12]), 1)
+    min_air_temp = round(min(data_transposed[13]), 1)
+    max_air_temp = round(max(data_transposed[13]), 1)
+
+    time = data_transposed[15]
     date = time[0].strftime('%m/%d/%Y')
     from_time = min(time).strftime('%H:%M')
     to_time = max(time).strftime('%H:%M')
@@ -346,21 +356,13 @@ def process_mdb_data(mdb_file_name, stations_rows, drops_rows):
         min_air_temp, max_air_temp, station_ids, from_time, to_time)
 
     # whole project data
-    global Section_No_Dict, Section_No_List, Summary_Stats_List, Station_Data_List
+    global Section_No_Dict, Section_No_List, Summary_Stats_List, Data_List
     Summary_Stats_List.append(summary_stats)
-    section_no_list = get_section_no_list(stations_rows)
+
     Section_No_List.extend(section_no_list)
     add_to_dict(Section_No_Dict, section_no_list, mdb_file_name)
-    for row in stations_rows:
-        rowAsList = [mdb_file_name] + [x for x in row]
-        Station_Data_List.append(rowAsList)
 
-def check_coords(lats,longs):
-        avg_lat = mean(lats)
-        avg_long = mean(longs)
-        '''
-        for lat in lats:
-            if lat <= avg_lat + 2 or lat >= avg_lat - 2:'''
+    
 
 def query_mdb_data(mdb_files):
     DRV = '{Microsoft Access Driver (*.mdb)}'
@@ -373,23 +375,14 @@ def query_mdb_data(mdb_files):
         connection = pyodbc.connect('DRIVER={};DBQ={};PWD={}'.format(DRV, mdb_file_path, PWD))
         cursor = connection.cursor()
 
-        stations_query = 'SELECT * FROM Stations;'
-        stations_rows = cursor.execute(stations_query).fetchall()
-        stations_fields = [column[0] for column in cursor.description]
-
-        drops_query = 'SELECT * FROM Drops;'
-        drops_rows = cursor.execute(drops_query).fetchall()
+        data_query = 'SELECT * FROM Stations Inner Join Drops On Stations.StationID = Drops.StationID'
+        data_rows = cursor.execute(data_query).fetchall()
+        data_headers = cursor.description
         
-        global Drops_Headers
-        if not Drops_Headers:
-            drops_fields = ['File'] + [column[0] for column in cursor.description]
-            drops_fields.append('Decreasing Deflections')
-            Drops_Headers = drops_fields
-
         cursor.close()
         connection.close()
         print(mdb_file_name)
-        process_mdb_data(mdb_file_name, stations_rows, drops_rows)
+        process_mdb_data(mdb_file_name, data_rows, data_headers)
 
 def set_global_vars():
     global tk_root, QC_PATH, SPEC_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE
@@ -461,13 +454,10 @@ def make_arcgis_shape_file(kml_file):
 def open_files(qc_file):
     open_qc_file(qc_file)
     subprocess.Popen('explorer ' + QC_PATH)
-    '''if os.path.isfile(GEP):
-        os.startfile(GEP)'''
 
 def main():
     print("""\nWelcome to Auto QC \n\nClose this window at any time to Quit the Program.\n
     \n""")
-    #time.sleep(0.85)
 
     global tk_root, tk_chkbox
     tk_root = tk.Tk()
@@ -493,9 +483,9 @@ def main():
     mdb_files = find_mdb_files(QC_PATH)
     query_mdb_data(mdb_files) 
     qc_file = write_excel_file()
-    write_drops_file()
     kml_file = write_kml_file()
     write_bad_sections_kml()
+    #write_bad_drops_kml()
     make_arcgis_shape_file(kml_file)
     open_files(qc_file)
     print('Success!')
