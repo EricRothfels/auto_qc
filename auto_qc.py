@@ -33,7 +33,6 @@ Section_No_Dict = {}
 Data_List = []
 Station_IDs_Dict = {}
 Insufficient_Tests_Dict = {}
-Data_List = []
 Data_Headers = None
 Fwd_Test_List = []
 
@@ -43,6 +42,9 @@ tk_dir_entry = None
 tk_dir_entry_str = None
 tk_file_entry = None
 tk_file_entry_str = None
+tk_dir_button = None
+tk_file_button = None
+tk_run_button = None
 
 class Summary_Stats:
     def __init__(self, mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
@@ -212,12 +214,14 @@ def write_summary_ws(wb):
 
     # write summary stats
     for i,s in enumerate(Summary_Stats_List):
-        row = (s.date, s.from_time, s.to_time, s.mdb_file_name, '', '', '', s.completed_tests, '', s.sect_no_check or 'P', s.max_station, '',
+        if not s.sect_no_check and FWD_TEST_LIST_FILE:
+            s.sect_no_check = 'P'
+        row = (s.date, s.from_time, s.to_time, s.mdb_file_name, '', '', '', s.completed_tests, '', s.sect_no_check, s.max_station, '',
             s.min_surface_temp, s.max_surface_temp, '', s.min_air_temp, s.max_air_temp, '', s.station_ids or 'P')
         summary_ws.append(row)
         if not s.station_ids:
             style_cell(summary_ws, i + 2, 19)
-        if not s.sect_no_check:
+        if not s.sect_no_check and FWD_TEST_LIST_FILE:
             style_cell(summary_ws, i + 2, 10)
 
 def in_station_id_dict(row):
@@ -435,11 +439,12 @@ def set_selected_dir():
     global tk_dir_entry_str
     options = {'title':'Select the QC Project Folder'}
     wd = filedialog.askdirectory(**options)
-    wd = check_selected_dir(wd)
     if wd:
-        tk_dir_entry_str.set(wd)
-    else:
-        messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
+        wd = check_selected_dir(wd)
+        if wd:
+            tk_dir_entry_str.set(wd)
+        else:
+            messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
 
 def check_selected_file(wf):
     if wf:
@@ -470,31 +475,48 @@ def set_selected_file():
                     options['initialdir'] = os.path.join(specification, 'fwd_setup')
 
     wf = filedialog.askopenfilename(**options)
-    wf = check_selected_file(wf)
     if wf:
-        tk_file_entry_str.set(wf)
-    else:
-        messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
+        wf = check_selected_file(wf)
+        if wf:
+            tk_file_entry_str.set(wf)
+        else:
+            messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
 
 def set_global_vars():
     global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE, MDB_FILES
+    error = False
     path = check_selected_dir(tk_dir_entry_str.get())
-    spec_file = check_selected_file(tk_file_entry_str.get())
+    test_list_file = tk_file_entry_str.get()
+    if test_list_file:
+        test_list_file = check_selected_file(test_list_file)
+        if test_list_file == False:
+            messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
+            error = True
 
     if not path:
         messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
-    elif not spec_file:
-        messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
+        error = True
 
-    if path and spec_file:
+    if not error:
         QC_PATH = path
-        FWD_TEST_LIST_FILE = spec_file
+        if test_list_file:
+            FWD_TEST_LIST_FILE = test_list_file
         MAKE_ARCGIS_FILE = bool(tk_chkbox.var.get())
         mdb_files = find_mdb_files(path)
         proj = mdb_files[0][0]
         PROJECT_NAME = left(proj, '.') + '_raw_qc_' + datetime.datetime.now().strftime('%Y%m%d')
         MDB_FILES = mdb_files
-        tk_root.destroy()
+
+        tk_chkbox.configure(state='disable')
+        tk_dir_entry.configure(state='readonly')
+        tk_file_entry.configure(state='readonly')
+        tk_dir_button.configure(state='disable')
+        tk_file_button.configure(state='disable')
+        tk_run_button.configure(state='disable')
+
+        main()
+        #tk_root.destroy()
+        #tk_root.withdraw()
 
 def open_qc_file(qc_file):
     excel_p = subprocess.Popen('"' + qc_file + '"', shell=True)
@@ -518,44 +540,7 @@ def open_files(qc_file):
     open_qc_file(qc_file)
     subprocess.Popen('explorer ' + QC_PATH)
 
-def set_up_gui():
-    global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str
-    tk_root = tk.Tk()
-    tk_root.wm_title('Auto QC by Eric Rothfels ;)')
-    tk.Label(tk_root, text='Select the Project Folder Containing .mdb files', 
-        font = "Helvetica 18").grid(row=0, column=1, columnspan=3, padx=15,pady=15)
-    tk.Label(tk_root, text='Select the FWD Test List File', 
-        font = "Helvetica 18").grid(row=2, column=1, columnspan=3, padx=15,pady=15)
-    v = tk.IntVar()
-    tk_chkbox = tk.Checkbutton(tk_root, text="Make ArcGIS Shape File from FWD Tests", variable=v)
-    tk_chkbox.var = v
-    tk_chkbox.grid(row=4, column=2, columnspan=2)
-    #tk_chkbox.select()
-    tk.Label(tk_root, text='  \u2794 ', font = "Helvetica 14").grid(row=5, column=3, columnspan=1)
-    tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_dir).grid(row=1, column=6, sticky=tk.W, padx=5,pady=5)
-    tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_file).grid(row=3, column=6, sticky=tk.W, padx=5,pady=5)
-    tk.Button(tk_root, text='Run', font='Helvetica 14', command=set_global_vars).grid(row=5, column=7, sticky=tk.W, padx=15,pady=15)
-    
-    tk.Label(tk_root, text='Project Folder:', 
-        font = "Helvetica 12").grid(row=1, column=0, columnspan=1, padx=5,pady=5)
-    tk.Label(tk_root, text='FWD Test List File: (optional)', 
-        font = "Helvetica 12").grid(row=3, column=0, columnspan=1, padx=5,pady=5)
-    tk_dir_entry_str = tk.StringVar()
-    tk_dir_entry = tk.Entry(tk_root, textvariable=tk_dir_entry_str, width=100)
-    tk_dir_entry.grid(row=1, column=1, columnspan=5)
-    tk_file_entry_str = tk.StringVar()
-    tk_file_entry = tk.Entry(tk_root, textvariable=tk_file_entry_str, width=100)
-    tk_file_entry.grid(row=3, column=1, columnspan=5)
-    #centre the window
-    tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
-    tk_root.mainloop()
-    root = tk.Tk()
-    root.withdraw()
-
 def main():
-    print("""\nWelcome to Auto QC \n\nClose this window at any time to Quit the Program.\n
-    \n""")
-    set_up_gui()
     if not (QC_PATH and MDB_FILES):
         exit()
     query_mdb_data()
@@ -568,6 +553,41 @@ def main():
     make_arcgis_shape_file(kml_file)
     open_files(qc_file)
     print('Success!')
+
+def set_up_gui():
+    global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str, tk_dir_button, tk_file_button, tk_run_button
+    tk_root = tk.Tk()
+    tk_root.wm_title('Auto QC by Eric Rothfels ;)')
+    tk.Label(tk_root, text='Select the Project Folder Containing .mdb files', 
+        font = "Helvetica 18").grid(row=0, column=1, columnspan=3, padx=15,pady=15)
+    tk.Label(tk_root, text='Select the FWD Test List File', 
+        font = "Helvetica 18").grid(row=2, column=1, columnspan=3, padx=15,pady=15)
+    v = tk.IntVar()
+    tk_chkbox = tk.Checkbutton(tk_root, text="Make ArcGIS Shape File from FWD Tests", variable=v)
+    tk_chkbox.var = v
+    tk_chkbox.grid(row=4, column=2, columnspan=2)
+    #tk_chkbox.select()
+    tk.Label(tk_root, text='  \u2794 ', font = "Helvetica 14").grid(row=5, column=3, columnspan=1)
+    tk_dir_button = tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_dir)
+    tk_dir_button.grid(row=1, column=6, sticky=tk.W, padx=5,pady=5)
+    tk_file_button = tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_file)
+    tk_file_button.grid(row=3, column=6, sticky=tk.W, padx=5,pady=5)
+    tk_run_button = tk.Button(tk_root, text='Run', font='Helvetica 14', command=set_global_vars)
+    tk_run_button.grid(row=5, column=7, sticky=tk.W, padx=15,pady=15)
+    
+    tk.Label(tk_root, text='Project Folder:', 
+        font = "Helvetica 12").grid(row=1, column=0, columnspan=1, padx=5,pady=5)
+    tk.Label(tk_root, text='FWD Test List File: (optional)', 
+        font = "Helvetica 12").grid(row=3, column=0, columnspan=1, padx=5,pady=5)
+    tk_dir_entry_str = tk.StringVar()
+    tk_dir_entry = tk.Entry(tk_root, textvariable=tk_dir_entry_str, width=100, readonlybackground='grey82')
+    tk_dir_entry.grid(row=1, column=1, columnspan=5)
+    tk_file_entry_str = tk.StringVar()
+    tk_file_entry = tk.Entry(tk_root, textvariable=tk_file_entry_str, width=100, readonlybackground='grey82')
+    tk_file_entry.grid(row=3, column=1, columnspan=5)
+    #centre the window
+    tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
+    tk_root.mainloop()
 
 def get_exception_stack():
     old_stderr = sys.stderr
@@ -588,4 +608,6 @@ def handle_exception(e):
         os._exit(0)
 
 if __name__=="__main__":
-    main()
+    print("""\nWelcome to Auto QC \n\nClose this window at any time to Quit the Program.\n
+    \n""")
+    set_up_gui()
