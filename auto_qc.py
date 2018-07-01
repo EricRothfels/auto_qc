@@ -26,6 +26,7 @@ PYTHON_DIR = ['C:\\Python27', 'C:\\ESRI\\Python2.7', 'C:\\Python2.7', 'C:\\ESRI\
 FONT_CHECKMARK = Font(name='Wingdings 2', size=11, bold=True)
 ARCGIS_PY_SCRIPT = os.path.join(CWD, 'gen_arcgis_file.py')
 MAKE_ARCGIS_FILE = False
+MDB_FILES = None
 
 Summary_Stats_List = []
 Section_No_Dict = {}
@@ -38,7 +39,10 @@ Fwd_Test_List = []
 
 tk_root = None
 tk_chkbox = None
-
+tk_dir_entry = None
+tk_dir_entry_str = None
+tk_file_entry = None
+tk_file_entry_str = None
 
 class Summary_Stats:
     def __init__(self, mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
@@ -398,10 +402,10 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers):
     Summary_Stats_List.append(summary_stats)
     add_to_section_dict(mdb_data, mdb_file_name)
 
-def query_mdb_data(mdb_files):
+def query_mdb_data():
     DRV = '{Microsoft Access Driver (*.mdb)}'
     PWD = 'pw'
-    for mdb in mdb_files:
+    for mdb in MDB_FILES:
         mdb_file_name = mdb[0]
         mdb_file_path = mdb[1]
         
@@ -418,53 +422,78 @@ def query_mdb_data(mdb_files):
         print(mdb_file_name)
         process_mdb_data(mdb_file_name, data_rows, data_headers)
 
-def set_global_vars():
-    global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE
-    path = None
-    spec_file = None
-    options = {'title':'Select the QC Project Folder'}
-    while True:
-        wd = filedialog.askdirectory(**options)
-        if not wd:
-            break
+def check_selected_dir(wd):
+    if wd:
         wd = wd.replace('/', '\\')
-        if wd and os.path.isdir(wd):
+        if os.path.isdir(wd):
             mdb_files = find_mdb_files(wd)
             if mdb_files:
-                proj = mdb_files[0][0]
-                PROJECT_NAME = left(proj, '.') + '_raw_qc_' + datetime.datetime.now().strftime('%Y%m%d')
-                path = wd
-                ftypes = [('Excel files', '*.xls;*.xlsx;*.xlsm;')]
-                options = {'title':'Select the QC Specification Excel File', 'filetypes':ftypes}
-                wd = left(wd,'field_data')
-                if len(wd) < len(path):
-                    fwd_dir = os.path.join(wd,'specification')
-                    if os.path.isdir(fwd_dir):
-                        wd = fwd_dir
-                        fwd_dir = os.path.join(wd, 'fwd')
-                        if os.path.isdir(fwd_dir):
-                            wd = fwd_dir
-                        elif os.path.isdir(os.path.join(wd, 'fwd_setup')):
-                            wd = os.path.join(wd, 'fwd_setup')
-                    options['initialdir'] = wd
-                while True:
-                    wf = filedialog.askopenfilename(**options)
-                    if not wf:
-                        break
-                    wf = wf.replace('/', '\\')
-                    if os.path.isfile(wf) and (wf.lower().endswith('.xls') or wf.lower().endswith('.xlsx') or wf.lower().endswith('.xlsm')):
-                        spec_file = wf
-                        break
-                    else:
-                        messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
-                break
-            else:
-                messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
+                return wd
+    return False
 
-    if path and os.path.isdir(path) and spec_file:
+def set_selected_dir():
+    global tk_dir_entry_str
+    options = {'title':'Select the QC Project Folder'}
+    wd = filedialog.askdirectory(**options)
+    wd = check_selected_dir(wd)
+    if wd:
+        tk_dir_entry_str.set(wd)
+    else:
+        messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
+
+def check_selected_file(wf):
+    if wf:
+        wf = wf.replace('/', '\\')
+        if os.path.isfile(wf) and \
+        (wf.lower().endswith('.xls') or wf.lower().endswith('.xlsx') or wf.lower().endswith('.xlsm')):
+            return wf
+    return False
+
+def set_selected_file():
+    global tk_file_entry_str
+    ftypes = [('Excel files', '*.xls;*.xlsx;*.xlsm;')]
+    options = {'title':'Select the QC Specification Excel File', 'filetypes':ftypes}
+
+    wd = tk_dir_entry_str.get()
+    field_data = check_selected_dir(wd)
+    if field_data:
+        phase = left(field_data,'field_data')
+        options['initialdir'] = phase
+        if len(field_data) > len(phase):
+            specification = os.path.join(phase,'specification')
+            if os.path.isdir(specification):
+                options['initialdir'] = specification
+                fwd = os.path.join(specification, 'fwd')
+                if os.path.isdir(fwd):
+                    options['initialdir'] = fwd
+                elif os.path.isdir(os.path.join(specification, 'fwd_setup')):
+                    options['initialdir'] = os.path.join(specification, 'fwd_setup')
+
+    wf = filedialog.askopenfilename(**options)
+    wf = check_selected_file(wf)
+    if wf:
+        tk_file_entry_str.set(wf)
+    else:
+        messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
+
+def set_global_vars():
+    global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE, MDB_FILES
+    path = check_selected_dir(tk_dir_entry_str.get())
+    spec_file = check_selected_file(tk_file_entry_str.get())
+
+    if not path:
+        messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
+    elif not spec_file:
+        messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
+
+    if path and spec_file:
         QC_PATH = path
         FWD_TEST_LIST_FILE = spec_file
         MAKE_ARCGIS_FILE = bool(tk_chkbox.var.get())
+        mdb_files = find_mdb_files(path)
+        proj = mdb_files[0][0]
+        PROJECT_NAME = left(proj, '.') + '_raw_qc_' + datetime.datetime.now().strftime('%Y%m%d')
+        MDB_FILES = mdb_files
         tk_root.destroy()
 
 def open_qc_file(qc_file):
@@ -489,36 +518,49 @@ def open_files(qc_file):
     open_qc_file(qc_file)
     subprocess.Popen('explorer ' + QC_PATH)
 
-def main():
-    print("""\nWelcome to Auto QC \n\nClose this window at any time to Quit the Program.\n
-    \n""")
-
-    global tk_root, tk_chkbox
+def set_up_gui():
+    global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str
     tk_root = tk.Tk()
     tk_root.wm_title('Auto QC by Eric Rothfels ;)')
-    tk.Label(tk_root, text='Select the Project Folder Containing .mdb files\nThen, Select the FWD Test List File', 
+    tk.Label(tk_root, text='Select the Project Folder Containing .mdb files', 
         font = "Helvetica 18").grid(row=0, column=1, columnspan=3, padx=15,pady=15)
+    tk.Label(tk_root, text='Select the FWD Test List File', 
+        font = "Helvetica 18").grid(row=2, column=1, columnspan=3, padx=15,pady=15)
     v = tk.IntVar()
-    tk_chkbox = tk.Checkbutton(tk_root, text="Make ArcGIS Shape File from Tests", variable=v)
+    tk_chkbox = tk.Checkbutton(tk_root, text="Make ArcGIS Shape File from FWD Tests", variable=v)
     tk_chkbox.var = v
     tk_chkbox.grid(row=4, column=2, columnspan=2)
     #tk_chkbox.select()
     tk.Label(tk_root, text='  \u2794 ', font = "Helvetica 14").grid(row=5, column=3, columnspan=1)
-    tk.Button(tk_root, text='OK', font='Helvetica 14', command=set_global_vars).grid(row=5, column=4, sticky=tk.W, padx=15,pady=15)
+    tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_dir).grid(row=1, column=6, sticky=tk.W, padx=5,pady=5)
+    tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_file).grid(row=3, column=6, sticky=tk.W, padx=5,pady=5)
+    tk.Button(tk_root, text='Run', font='Helvetica 14', command=set_global_vars).grid(row=5, column=7, sticky=tk.W, padx=15,pady=15)
+    
+    tk.Label(tk_root, text='Project Folder:', 
+        font = "Helvetica 12").grid(row=1, column=0, columnspan=1, padx=5,pady=5)
+    tk.Label(tk_root, text='FWD Test List File: (optional)', 
+        font = "Helvetica 12").grid(row=3, column=0, columnspan=1, padx=5,pady=5)
+    tk_dir_entry_str = tk.StringVar()
+    tk_dir_entry = tk.Entry(tk_root, textvariable=tk_dir_entry_str, width=100)
+    tk_dir_entry.grid(row=1, column=1, columnspan=5)
+    tk_file_entry_str = tk.StringVar()
+    tk_file_entry = tk.Entry(tk_root, textvariable=tk_file_entry_str, width=100)
+    tk_file_entry.grid(row=3, column=1, columnspan=5)
     #centre the window
     tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
     tk_root.mainloop()
-
     root = tk.Tk()
     root.withdraw()
 
-    if not QC_PATH:
+def main():
+    print("""\nWelcome to Auto QC \n\nClose this window at any time to Quit the Program.\n
+    \n""")
+    set_up_gui()
+    if not (QC_PATH and MDB_FILES):
         exit()
-    mdb_files = find_mdb_files(QC_PATH)
-    query_mdb_data(mdb_files)
+    query_mdb_data()
     if FWD_TEST_LIST_FILE:
         read_fwd_test_list()
-
     qc_file = write_excel_file()
     kml_file = write_kml_file()
     write_bad_sections_kml()
