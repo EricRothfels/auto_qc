@@ -35,6 +35,7 @@ Station_IDs_Dict = {}
 Insufficient_Tests_Dict = {}
 Data_Headers = None
 Fwd_Test_List = []
+Fwd_Test_List_Dict = {}
 
 tk_root = None
 tk_chkbox = None
@@ -48,7 +49,7 @@ tk_run_button = None
 
 class Summary_Stats:
     def __init__(self, mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
-        min_air_temp, max_air_temp, station_ids, from_time, to_time):
+        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check):
         self.date = date
         self.max_station = max_station
         self.min_surface_temp = min_surface_temp
@@ -61,6 +62,7 @@ class Summary_Stats:
         self.sect_no_check = ''
         self.from_time = from_time
         self.to_time = to_time
+        self.station_check = station_check
 
 def is_number(value):
   try:
@@ -128,6 +130,15 @@ def add_sect_no_check(mdb_file_name, sect_no):
                 ss.sect_no_check = 'Sect_No: ' + sect_no
             break
 
+def make_test_list_dict():
+    global Fwd_Test_List_Dict
+    sect_no_col = get_col_no(Fwd_Test_List[0], ['RT_NO', 'SECT_NO', 'FWD_NO']) or 0
+    for row in Fwd_Test_List[1:]:
+        sect_no = row[sect_no_col]
+        if is_number(sect_no):
+            sect_no = str(int(float(sect_no)))
+            Fwd_Test_List_Dict[sect_no] = row
+
 def read_fwd_test_list():
     global Fwd_Test_List
     wb = xlrd.open_workbook(FWD_TEST_LIST_FILE)
@@ -142,6 +153,20 @@ def read_fwd_test_list():
         Fwd_Test_List.append(r)
     if Fwd_Test_List:
         Fwd_Test_List[0].extend(['Field Tests', 'Compare Test Count', 'Insufficient Field Tests', 'Comments'])
+        make_test_list_dict()
+
+def check_section_length(station, section_no):
+    if not (Fwd_Test_List_Dict and Fwd_Test_List):
+        return
+    length_col = get_col(Fwd_Test_List[0], 'LENGTH')
+    if length_col:
+        section_no = str(section_no)
+        if section_no in Fwd_Test_List_Dict:
+            row = Fwd_Test_List_Dict[section_no]
+            length = row[length_col]
+            if is_number(station) and is_number(length):
+                if float(station) > float(length):
+                    return str(int(float(length)))
 
 def get_col(headers, header_name):
     try:
@@ -217,12 +242,14 @@ def write_summary_ws(wb):
         if not s.sect_no_check and FWD_TEST_LIST_FILE:
             s.sect_no_check = 'P'
         row = (s.date, s.from_time, s.to_time, s.mdb_file_name, '', '', '', s.completed_tests, '', s.sect_no_check, s.max_station, '',
-            s.min_surface_temp, s.max_surface_temp, '', s.min_air_temp, s.max_air_temp, '', s.station_ids or 'P')
+            s.min_surface_temp, s.max_surface_temp, '', s.min_air_temp, s.max_air_temp, '', s.station_ids or 'P', s.station_check or 'P')
         summary_ws.append(row)
         if not s.station_ids:
             style_cell(summary_ws, i + 2, 19)
-        if not s.sect_no_check and FWD_TEST_LIST_FILE:
+        if s.sect_no_check == 'P' and FWD_TEST_LIST_FILE:
             style_cell(summary_ws, i + 2, 10)
+        if not s.station_check:
+            style_cell(summary_ws, i + 2, 20)
 
 def in_station_id_dict(row):
     drop_col = get_col(Data_Headers, 'DropID')
@@ -233,6 +260,10 @@ def in_station_id_dict(row):
         if key in Station_IDs_Dict:
             return Station_IDs_Dict[key]
     return False
+
+def highlight_cell(ws, row, col, highlight):
+    xls_cell = ws.cell(row=row, column=col)
+    xls_cell.style = highlight
 
 def write_station_ws(wb):
     # write station data
@@ -247,8 +278,14 @@ def write_station_ws(wb):
         stations_ws.cell(row=1, column=col).value = header
 
     sect_col = get_col(Data_Headers, 'SECT_NO')
+    station_col = get_col(Data_Headers, 'Station')
     for i,row in enumerate(Data_List):
-        checks = ['', '']
+        checks = ['', '', '']
+        if station_col and sect_col:
+            stn_chk = check_section_length(row[station_col], row[sect_col])
+            if stn_chk:
+                # highlight bad
+                checks[2] = 'Section Length: ' + stn_chk
         j = in_station_id_dict(row)
         if j:
             # increasing deflection
@@ -259,11 +296,13 @@ def write_station_ws(wb):
         stations_ws.append(row)
         if j:
             # increasing deflection, highlight this cell
-            xls_cell = stations_ws.cell(row=i + 2, column=j + 1)
-            xls_cell.style = highlight
-            style_cell(stations_ws, i + 2, len(row) - 1)
+            highlight_cell(stations_ws, i + 2, j + 1, highlight)
+            style_cell(stations_ws, i + 2, len(row) - 2)
         if checks[1]:
-            style_cell(stations_ws, i + 2, len(row))
+            style_cell(stations_ws, i + 2, len(row) - 1)
+        if checks[2]:
+            highlight_cell(stations_ws, i + 2, station_col + 1, highlight)
+            highlight_cell(stations_ws, i + 2, len(row), highlight)
 
 def write_excel_file():
     wb = load_workbook(TEMPLATE_FILE)
@@ -334,7 +373,7 @@ def check_coords(lats,longs):
 def process_mdb_data(mdb_file_name, data_rows, data_headers):
     global Data_Headers, Data_List
     if not Data_Headers:
-        Data_Headers = ['File'] + [col[0] for col in data_headers] + ['Decreasing Deflections', 'Insufficient Field Tests']
+        Data_Headers = ['File'] + [col[0] for col in data_headers] + ['Decreasing Deflections', 'Insufficient Field Tests', 'Station < Section Length']
         slab_col = get_col(Data_Headers, 'SlabID')
         if slab_col:
             Data_Headers.insert(slab_col, 'SECT_NO')
@@ -385,9 +424,14 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers):
     d1_col = get_col(Data_Headers, 'D1')
     drop_col = get_col(Data_Headers, 'DropID')
     stationID_col = get_col(Data_Headers, 'StationID')
-
-    if d1_col and stationID_col and drop_col:
-        for row in mdb_data:
+    stn_chk_ids = {}
+    for row in mdb_data:
+        if station_col and sect_col and stationID_col:
+            stn_chk = check_section_length(row[station_col], row[sect_col])
+            if stn_chk:
+                # highlight bad
+                stn_chk_ids[str(row[stationID_col])] = None
+        if d1_col and stationID_col and drop_col:
             for i in range(d1_col, d1_col + 7):
                 if row[i] < row[i + 1]:
                     station_ids[str(row[stationID_col])] = None
@@ -395,12 +439,15 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers):
                     Station_IDs_Dict[key] = i + 1
                     break
     if station_ids:
-        ids = station_ids.keys()
-        station_ids = 'StationID ' + ', '.join(ids)
+        station_ids = 'StationID ' + ', '.join(station_ids.keys())
     else:
         station_ids = ''
+    if stn_chk_ids:
+        station_check = 'StationID ' + ', '.join(stn_chk_ids.keys())
+    else:
+        station_check = ''
     summary_stats = Summary_Stats(mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
-        min_air_temp, max_air_temp, station_ids, from_time, to_time)
+        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check)
 
     global Summary_Stats_List
     Summary_Stats_List.append(summary_stats)
@@ -543,9 +590,9 @@ def open_files(qc_file):
 def main():
     if not (QC_PATH and MDB_FILES):
         exit()
-    query_mdb_data()
     if FWD_TEST_LIST_FILE:
         read_fwd_test_list()
+    query_mdb_data()
     qc_file = write_excel_file()
     kml_file = write_kml_file()
     write_bad_sections_kml()
@@ -565,7 +612,7 @@ def set_up_gui():
     v = tk.IntVar()
     tk_chkbox = tk.Checkbutton(tk_root, text="Make ArcGIS Shape File from FWD Tests", variable=v)
     tk_chkbox.var = v
-    tk_chkbox.grid(row=4, column=2, columnspan=2)
+    tk_chkbox.grid(row=6, column=2, columnspan=2)
     #tk_chkbox.select()
     tk.Label(tk_root, text='  \u2794 ', font = "Helvetica 14").grid(row=5, column=3, columnspan=1)
     tk_dir_button = tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_dir)
@@ -573,11 +620,11 @@ def set_up_gui():
     tk_file_button = tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_file)
     tk_file_button.grid(row=3, column=6, sticky=tk.W, padx=5,pady=5)
     tk_run_button = tk.Button(tk_root, text='Run', font='Helvetica 14', command=set_global_vars)
-    tk_run_button.grid(row=5, column=7, sticky=tk.W, padx=15,pady=15)
+    tk_run_button.grid(row=7, column=7, sticky=tk.W, padx=15,pady=15)
     
     tk.Label(tk_root, text='Project Folder:', 
         font = "Helvetica 12").grid(row=1, column=0, columnspan=1, padx=5,pady=5)
-    tk.Label(tk_root, text='FWD Test List File: (optional)', 
+    tk.Label(tk_root, text='FWD Test List File:\n(optional)', 
         font = "Helvetica 12").grid(row=3, column=0, columnspan=1, padx=5,pady=5)
     tk_dir_entry_str = tk.StringVar()
     tk_dir_entry = tk.Entry(tk_root, textvariable=tk_dir_entry_str, width=100, readonlybackground='grey82')
@@ -585,6 +632,19 @@ def set_up_gui():
     tk_file_entry_str = tk.StringVar()
     tk_file_entry = tk.Entry(tk_root, textvariable=tk_file_entry_str, width=100, readonlybackground='grey82')
     tk_file_entry.grid(row=3, column=1, columnspan=5)
+
+    ''' ###  temperature inputs: (need a separate frame)
+    tk.Label(tk_root, text='Max Temperature:\n(optional)', 
+        font = "Helvetica 12").grid(row=4, column=0, columnspan=1, padx=5,pady=5)
+    tk.Label(tk_root, text='Min Temperature:\n(optional)', 
+        font = "Helvetica 12").grid(row=5, column=0, columnspan=1, padx=5,pady=5)
+    tk_dir_entry_str = tk.StringVar()
+    tk_dir_entry = tk.Entry(tk_root, textvariable=tk_dir_entry_str, width=15, readonlybackground='grey82')
+    tk_dir_entry.grid(row=4, column=1, columnspan=5)
+    tk_file_entry_str = tk.StringVar()
+    tk_file_entry = tk.Entry(tk_root, textvariable=tk_file_entry_str, width=15, readonlybackground='grey82')
+    tk_file_entry.grid(row=5, column=1, columnspan=5)
+    '''
     #centre the window
     tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
     tk_root.mainloop()
