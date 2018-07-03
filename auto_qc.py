@@ -36,6 +36,8 @@ Insufficient_Tests_Dict = {}
 Data_Headers = None
 Fwd_Test_List = []
 Fwd_Test_List_Dict = {}
+Stations_Data_List = []
+Stations_Data_Headers = None
 
 tk_root = None
 tk_chkbox = None
@@ -46,6 +48,9 @@ tk_file_entry_str = None
 tk_dir_button = None
 tk_file_button = None
 tk_run_button = None
+
+highlight = NamedStyle(name="highlight")
+highlight.fill = PatternFill("solid", fgColor="f5b7b1")
 
 class Summary_Stats:
     def __init__(self, mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
@@ -195,11 +200,11 @@ def write_test_list_ws(wb):
     # write field test numbers, test list sheet
     headers = Fwd_Test_List[0]
     sect_no_col = get_col_no(headers, ['RT_NO', 'SECT_NO', 'FWD_NO']) or 0
-    total_tests_col = get_col_no(headers, ['TOTAL TESTS','TOTAL', 'TOT_TEST']) or (len(headers) - 1)
+    total_tests_col = 8 #get_col_no(headers, ['TOTAL TESTS','TOTAL', 'TOT_TEST']) or (len(headers) - 1)  ##########change this line!!!!!!!!!!!!!!!   should be (len(headers) - 1)
 
     for col, header in enumerate(headers, start=1):
         test_list_ws.cell(row=1, column=col).value = header
-    for i,row in enumerate(Fwd_Test_List[1:]):
+    for i,row in enumerate(Fwd_Test_List[1:-1]): ################################ !!!!!!!!
         style = None
         sect_no = str(row[sect_no_col])
         if is_number(sect_no):
@@ -219,6 +224,7 @@ def write_test_list_ws(wb):
                     style = [i + 2, len(row)]
                     Insufficient_Tests_Dict[sect_no] = None
         else:
+            continue ############################################ !!!!!!!!!!!!!!!!!!!
             row.append('0')
             reqd_tests = row[total_tests_col]
             if is_number(reqd_tests):
@@ -251,10 +257,10 @@ def write_summary_ws(wb):
         if not s.station_check:
             style_cell(summary_ws, i + 2, 20)
 
-def in_station_id_dict(row):
-    drop_col = get_col(Data_Headers, 'DropID')
-    file_col = get_col(Data_Headers, 'File')
-    stationID_col = get_col(Data_Headers, 'StationID')
+def in_station_id_dict(row, headers):
+    drop_col = get_col(headers, 'DropID')
+    file_col = get_col(headers, 'File')
+    stationID_col = get_col(headers, 'StationID')
     if stationID_col and drop_col:
         key = (row[stationID_col], row[file_col], row[drop_col])
         if key in Station_IDs_Dict:
@@ -265,44 +271,46 @@ def highlight_cell(ws, row, col, highlight):
     xls_cell = ws.cell(row=row, column=col)
     xls_cell.style = highlight
 
-def write_station_ws(wb):
-    # write station data
-    if not 'Stations' in wb:
-        wb.create_sheet('Stations')
-    stations_ws = wb['Stations']
+def write_data_ws(ws, data_list, headers):
+    for col, header in enumerate(headers, start=1):
+        ws.cell(row=1, column=col).value = header
 
-    highlight = NamedStyle(name="highlight")
-    highlight.fill = PatternFill("solid", fgColor="f5b7b1")
-
-    for col, header in enumerate(Data_Headers, start=1):
-        stations_ws.cell(row=1, column=col).value = header
-
-    sect_col = get_col(Data_Headers, 'SECT_NO')
-    station_col = get_col(Data_Headers, 'Station')
-    for i,row in enumerate(Data_List):
+    sect_col = get_col(headers, 'SECT_NO')
+    station_col = get_col(headers, 'Station')
+    for i,row in enumerate(data_list):
         checks = ['', '', '']
         if station_col and sect_col:
             stn_chk = check_section_length(row[station_col], row[sect_col])
             if stn_chk:
-                # highlight bad
+                # station > length, highlight bad
                 checks[2] = 'Section Length: ' + stn_chk
-        j = in_station_id_dict(row)
+        j = in_station_id_dict(row, headers)
         if j:
             # increasing deflection
             checks[0] = 'O'
         if sect_col and row[sect_col] in Insufficient_Tests_Dict:
             checks[1] = 'O'
         row.extend(checks)
-        stations_ws.append(row)
+        ws.append(row)
         if j:
             # increasing deflection, highlight this cell
-            highlight_cell(stations_ws, i + 2, j + 1, highlight)
-            style_cell(stations_ws, i + 2, len(row) - 2)
+            highlight_cell(ws, i + 2, j + 1, highlight)
+            style_cell(ws, i + 2, len(row) - 2)
         if checks[1]:
-            style_cell(stations_ws, i + 2, len(row) - 1)
+            style_cell(ws, i + 2, len(row) - 1)
         if checks[2]:
-            highlight_cell(stations_ws, i + 2, station_col + 1, highlight)
-            highlight_cell(stations_ws, i + 2, len(row), highlight)
+            highlight_cell(ws, i + 2, station_col + 1, highlight)
+            highlight_cell(ws, i + 2, len(row), highlight)
+
+def write_station_ws(wb):
+    # write station & drops data
+    if not 'Stations' in wb:
+        wb.create_sheet('Stations')
+    stations_ws = wb['Stations']
+    drops_ws = wb['Stations & Drops']
+    global Data_Headers, Data_List, Stations_Data_List, Stations_Data_Headers
+    write_data_ws(drops_ws, Data_List, Data_Headers)
+    write_data_ws(stations_ws, Stations_Data_List, Stations_Data_Headers)
 
 def write_excel_file():
     wb = load_workbook(TEMPLATE_FILE)
@@ -341,7 +349,7 @@ def write_bad_drops_kml():
         return
     row_dict = {}
     for i,row in enumerate(Data_List):
-        if in_station_id_dict(row):
+        if in_station_id_dict(row, Data_Headers):
             row_dict[i] = None
     if row_dict:
         write_kml(os.path.join(QC_PATH, PROJECT_NAME + '_stations_with_increasing_deflection.kml'), 'red', row_dict)
@@ -370,14 +378,7 @@ def check_coords(lats,longs):
         for lat in lats:
             if lat <= avg_lat + 2 or lat >= avg_lat - 2:'''
 
-def process_mdb_data(mdb_file_name, data_rows, data_headers):
-    global Data_Headers, Data_List
-    if not Data_Headers:
-        Data_Headers = ['File'] + [col[0] for col in data_headers] + ['Decreasing Deflections', 'Insufficient Field Tests', 'Station < Section Length']
-        slab_col = get_col(Data_Headers, 'SlabID')
-        if slab_col:
-            Data_Headers.insert(slab_col, 'SECT_NO')
-
+def add_columns(data_rows, mdb_file_name):
     sect_col = get_col(Data_Headers, 'SECT_NO')
     mdb_data = []
     for row in data_rows:
@@ -385,7 +386,24 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers):
         if sect_col:
             row.insert(sect_col, left(row[sect_col], '-'))
         mdb_data.append(row)
-        Data_List.append(row)
+    return mdb_data
+
+def add_headers(headers):
+    headers = ['File'] + [col[0] for col in headers] + ['Decreasing Deflections', 'Insufficient Field Tests', 'Station < Section Length']
+    slab_col = get_col(headers, 'SlabID')
+    if slab_col:
+        headers.insert(slab_col, 'SECT_NO')
+    return headers
+
+def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_headers):
+    global Data_Headers, Data_List, Stations_Data_List, Stations_Data_Headers
+    if not Data_Headers:
+        Data_Headers = add_headers(data_headers)
+        Stations_Data_Headers = add_headers(stn_headers)
+    mdb_data = add_columns(data_rows, mdb_file_name)
+    Data_List.extend(mdb_data)
+    stn_data = add_columns(stn_rows, mdb_file_name)
+    Stations_Data_List.extend(stn_data)
 
     data_transposed = [*zip(*mdb_data)]
     #summary stats
@@ -424,6 +442,7 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers):
     d1_col = get_col(Data_Headers, 'D1')
     drop_col = get_col(Data_Headers, 'DropID')
     stationID_col = get_col(Data_Headers, 'StationID')
+    sect_col = get_col(Data_Headers, 'SECT_NO')
     stn_chk_ids = {}
     for row in mdb_data:
         if station_col and sect_col and stationID_col:
@@ -467,11 +486,15 @@ def query_mdb_data():
         data_query = 'SELECT * FROM Stations Inner Join Drops On Stations.StationID = Drops.StationID'
         data_rows = cursor.execute(data_query).fetchall()
         data_headers = cursor.description
+
+        data_query = 'SELECT * FROM Stations'
+        stn_rows = cursor.execute(data_query).fetchall()
+        stn_headers = cursor.description
         
         cursor.close()
         connection.close()
         print(mdb_file_name)
-        process_mdb_data(mdb_file_name, data_rows, data_headers)
+        process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_headers)
 
 def check_selected_dir(wd):
     if wd:
