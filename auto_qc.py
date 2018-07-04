@@ -53,14 +53,12 @@ tk_file_entry_str = None
 tk_dir_button = None
 tk_file_button = None
 tk_run_button = None
-tk_max_airtemp_str = None
 tk_max_airtemp_entry = None
-tk_min_airtemp_str = None
 tk_min_airtemp_entry = None
-tk_max_surtemp_str = None
 tk_max_surtemp_entry = None
-tk_min_surtemp_str = None
 tk_min_surtemp_entry = None
+tk_name_str = None
+tk_name_entry = None
 
 highlight = NamedStyle(name="highlight")
 highlight.fill = PatternFill("solid", fgColor="f5b7b1")
@@ -368,20 +366,40 @@ def write_excel_file():
     return qc_file
 
 def write_kml(file_path, color, row_dict=None):
-    kml = simplekml.Kml()
     sect_col = get_col_no(Data_Headers, 'SECT_NO')
     slab_col = get_col_no(Data_Headers, 'SlabID')
     lat_col = get_col_no(Data_Headers, 'Latitude')
     long_col = get_col_no(Data_Headers, 'Longitude')
+
+    file_col = get_col_no(Data_Headers, 'FILE')
+    stationID_col = get_col_no(Data_Headers, 'StationID')
+    station_col = get_col_no(Data_Headers, 'Station')
+    lane_col = get_col_no(Data_Headers, 'Lane')
     if not (lat_col and long_col):
         return
 
+    kml = simplekml.Kml()
+    schema = kml.newschema(name='point')
+    schema.newsimplefield(name='file', type='string', displayname='File')
+    schema.newsimplefield(name='stationID', type='int', displayname='StationID')
+    schema.newsimplefield(name='station', type='float', displayname='Station')
+    schema.newsimplefield(name='lane', type='int', displayname='Lane')
+
     for i,row in enumerate(Data_List):
         if not row_dict or  i in row_dict:
-            if sect_col and slab_col:
+            if sect_col and slab_col and sect_col < len(row) and slab_col < len(row):
                 pt = kml.newpoint(name=str(row[slab_col]), description=str(row[sect_col]), coords=[(row[long_col], row[lat_col])])
+                pt.extendeddata.schemadata.schemaurl = schema.id
+                if file_col != None and file_col < len(row):
+                    pt.extendeddata.schemadata.newsimpledata('file', row[file_col])
+                if stationID_col != None and stationID_col < len(row):
+                    pt.extendeddata.schemadata.newsimpledata('stationID', row[stationID_col])
+                if station_col != None and station_col < len(row):
+                    pt.extendeddata.schemadata.newsimpledata('station', row[station_col])
+                if lane_col != None and lane_col < len(row):
+                    pt.extendeddata.schemadata.newsimpledata('lane', row[lane_col])
                 pt.style.iconstyle.icon.href = 'http://www.google.com/intl/en_us/mapfiles/ms/icons/' + color + '-dot.png'
-        #'http://maps.google.com/mapfiles/kml/paddle/' + color + '-circle.png'
+                #'http://maps.google.com/mapfiles/kml/paddle/' + color + '-circle.png'
     kml.save(file_path)
 
 def write_kml_file():
@@ -567,6 +585,11 @@ def check_selected_dir(wd):
                 return wd
     return False
 
+def set_file_name_input(proj_name):
+    global tk_file_entry_str
+    name = left(proj_name, '.') + '_raw_qc'
+    tk_dir_entry_str.set(name)
+
 def set_selected_dir():
     global tk_dir_entry_str
     options = {'title':'Select the QC Project Folder'}
@@ -575,6 +598,7 @@ def set_selected_dir():
         wd = check_selected_dir(wd)
         if wd:
             tk_dir_entry_str.set(wd)
+            #set_file_name_input(proj_name)
         else:
             messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
 
@@ -679,6 +703,7 @@ def set_global_vars():
         tk_dir_button.config(state='disable')
         tk_file_button.config(state='disable')
         tk_run_button.config(state='disable')
+        tk_name_entry.config(state='readonly')
         tk_max_airtemp_entry.config(state='readonly')
         tk_min_airtemp_entry.config(state='readonly')
         tk_max_surtemp_entry.config(state='readonly')
@@ -699,7 +724,12 @@ def set_global_vars():
         MAKE_ARCGIS_FILE = bool(tk_chkbox.var.get())
         mdb_files = find_mdb_files(path)
         proj = mdb_files[0][0]
-        PROJECT_NAME = left(proj, '.') + '_raw_qc_' + datetime.datetime.now().strftime('%Y%m%d')
+
+        proj_name = tk_name_entry.get()
+        if proj_name != '':
+            PROJECT_NAME = proj_name.lower() + '_' + datetime.datetime.now().strftime('%Y%m%d')
+        else:
+            PROJECT_NAME = left(proj, '.').lower() + '_raw_qc_' + datetime.datetime.now().strftime('%Y%m%d')
         MDB_FILES = mdb_files
 
         main()
@@ -743,8 +773,7 @@ def main():
 
 def set_up_gui():
     global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str, tk_dir_button, tk_file_button, tk_run_button, \
-    tk_max_airtemp_str, tk_max_airtemp_entry, tk_min_airtemp_str, tk_min_airtemp_entry, tk_max_surtemp_str, tk_max_surtemp_entry, tk_min_surtemp_str, \
-    tk_min_surtemp_entry
+    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry
     tk_root = tk.Tk()
     frame = tk.Frame(tk_root)
     frame.pack()
@@ -763,9 +792,9 @@ def set_up_gui():
     #tk_chkbox.select()
     tk.Label(bottom_frame, text='  \u2794 ', font = "Helvetica 14").grid(row=10, column=6, columnspan=1)
     tk_dir_button = tk.Button(frame, text='Browse', font='Helvetica 12', command=set_selected_dir)
-    tk_dir_button.grid(row=1, column=6, sticky=tk.W, padx=5,pady=5)
+    tk_dir_button.grid(row=1, column=6, sticky=tk.W, padx=15,pady=5)
     tk_file_button = tk.Button(frame, text='Browse', font='Helvetica 12', command=set_selected_file)
-    tk_file_button.grid(row=3, column=6, sticky=tk.W, padx=5,pady=5)
+    tk_file_button.grid(row=3, column=6, sticky=tk.W, padx=15,pady=5)
     tk_run_button = tk.Button(bottom_frame, text='Run', font='Helvetica 14', command=set_global_vars)
     tk_run_button.grid(row=10, column=7, sticky=tk.W, padx=15,pady=15)
     
@@ -801,13 +830,17 @@ def set_up_gui():
     tk_min_airtemp_str = tk.StringVar()
     tk_min_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_airtemp_str, width=10, readonlybackground='grey82')
     tk_min_airtemp_entry.grid(row=0, column=3, columnspan=1)
-    
     tk_max_surtemp_str = tk.StringVar()
     tk_max_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_surtemp_str, width=10, readonlybackground='grey82')
     tk_max_surtemp_entry.grid(row=1, column=5, columnspan=1)
     tk_min_surtemp_str = tk.StringVar()
     tk_min_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_surtemp_str, width=10, readonlybackground='grey82')
     tk_min_surtemp_entry.grid(row=1, column=3, columnspan=1)
+    tk.Label(bottom_frame, text='Output File Name:\n(optional)', 
+        font = "Helvetica 11").grid(row=2, column=1, columnspan=1, padx=5,pady=5)
+    tk_name_str = tk.StringVar()
+    tk_name_entry = tk.Entry(bottom_frame, textvariable=tk_name_str, width=30, readonlybackground='grey82')
+    tk_name_entry.grid(row=2, column=2, columnspan=3)
     
     #centre the window
     tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
