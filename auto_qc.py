@@ -39,6 +39,11 @@ Fwd_Test_List_Dict = {}
 Stations_Data_List = []
 Stations_Data_Headers = None
 
+MAX_AIR_TEMP = None
+MIN_AIR_TEMP = None
+MAX_SURFACE_TEMP = None
+MIN_SURFACE_TEMP = None
+
 tk_root = None
 tk_chkbox = None
 tk_dir_entry = None
@@ -48,13 +53,21 @@ tk_file_entry_str = None
 tk_dir_button = None
 tk_file_button = None
 tk_run_button = None
+tk_max_airtemp_str = None
+tk_max_airtemp_entry = None
+tk_min_airtemp_str = None
+tk_min_airtemp_entry = None
+tk_max_surtemp_str = None
+tk_max_surtemp_entry = None
+tk_min_surtemp_str = None
+tk_min_surtemp_entry = None
 
 highlight = NamedStyle(name="highlight")
 highlight.fill = PatternFill("solid", fgColor="f5b7b1")
 
 class Summary_Stats:
     def __init__(self, mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
-        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check):
+        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check):
         self.date = date
         self.max_station = max_station
         self.min_surface_temp = min_surface_temp
@@ -68,6 +81,8 @@ class Summary_Stats:
         self.from_time = from_time
         self.to_time = to_time
         self.station_check = station_check
+        self.surface_temp_check = surface_temp_check
+        self.air_temp_check = air_temp_check
 
 def is_number(value):
   try:
@@ -269,8 +284,8 @@ def write_summary_ws(wb):
     for i,s in enumerate(Summary_Stats_List):
         if not s.sect_no_check and FWD_TEST_LIST_FILE:
             s.sect_no_check = 'P'
-        row = (s.date, s.from_time, s.to_time, s.mdb_file_name, '', '', '', s.completed_tests, '', s.sect_no_check, s.max_station, '',
-            s.min_surface_temp, s.max_surface_temp, '', s.min_air_temp, s.max_air_temp, '', s.station_ids or 'P', s.station_check or 'P')
+        row = (s.date, s.from_time, s.to_time, s.mdb_file_name, '', '', '', s.completed_tests, '', s.sect_no_check, s.max_station, s.surface_temp_check,
+            s.min_surface_temp, s.max_surface_temp, s.air_temp_check, s.min_air_temp, s.max_air_temp, '', s.station_ids or 'P', s.station_check or 'P')
         summary_ws.append(row)
         if not s.station_ids:
             style_cell(summary_ws, i + 2, 19)
@@ -444,9 +459,16 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     else:
         max_station = ''
     temp_col = get_col_no(Data_Headers, ['Surface', 'SurfaceTemperature'])
+    surface_temp_check = ''
+    air_temp_check = ''
     if temp_col:
         min_surface_temp = round(min(data_transposed[temp_col]), 1)
         max_surface_temp = round(max(data_transposed[temp_col]), 1)
+        if MAX_SURFACE_TEMP and MIN_SURFACE_TEMP:
+            if max_surface_temp <= MAX_SURFACE_TEMP and min_surface_temp >= MIN_SURFACE_TEMP:
+                surface_temp_check = 'good'
+            else:
+                surface_temp_check = 'bad'
     else:
         min_surface_temp = ''
         max_surface_temp = ''
@@ -454,6 +476,11 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     if temp_col:
         min_air_temp = round(min(data_transposed[temp_col]), 1)
         max_air_temp = round(max(data_transposed[temp_col]), 1)
+        if MAX_AIR_TEMP and MIN_AIR_TEMP:
+            if max_air_temp <= MAX_AIR_TEMP and min_air_temp >= MIN_AIR_TEMP:
+                air_temp_check = 'good'
+            else:
+                air_temp_check = 'bad'
     else:
         min_air_temp = ''
         max_air_temp = ''
@@ -501,7 +528,7 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     else:
         station_check = ''
     summary_stats = Summary_Stats(mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
-        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check)
+        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check)
 
     global Summary_Stats_List
     Summary_Stats_List.append(summary_stats)
@@ -589,8 +616,10 @@ def set_selected_file():
             messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
 
 def set_global_vars():
-    global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE, MDB_FILES
+    global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE, MDB_FILES, \
+    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP
     error = False
+
     path = check_selected_dir(tk_dir_entry_str.get())
     test_list_file = tk_file_entry_str.get()
     if test_list_file:
@@ -603,7 +632,67 @@ def set_global_vars():
         messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
         error = True
 
+    max_airtemp = tk_max_airtemp_entry.get()
+    if max_airtemp != '' and not is_number(max_airtemp):
+        tk_max_airtemp_entry.config(bg='LightPink1')
+        error = True
+    min_airtemp = tk_min_airtemp_entry.get()
+    if min_airtemp != '' and not is_number(min_airtemp):
+        tk_min_airtemp_entry.config(bg='LightPink1')
+        error = True
+    max_surtemp = tk_max_surtemp_entry.get()
+    if max_surtemp != '' and not is_number(max_surtemp):
+        tk_max_surtemp_entry.config(bg='LightPink1')
+        error = True
+    min_surtemp = tk_min_surtemp_entry.get()
+    if min_surtemp != '' and not is_number(min_surtemp):
+        tk_min_surtemp_entry.config(bg='LightPink1')
+        error = True
+    if max_airtemp != '' or min_airtemp != '':
+        if max_airtemp == '':
+            error = True
+            tk_max_airtemp_entry.config(bg='LightPink1')
+        elif min_airtemp == '':
+            error = True
+            tk_min_airtemp_entry.config(bg='LightPink1')
+        elif is_number(max_airtemp) and is_number(min_airtemp) and float(max_airtemp) <= float(min_airtemp):
+            error = True
+            tk_max_airtemp_entry.config(bg='LightPink1')
+            tk_min_airtemp_entry.config(bg='LightPink1')
+    if max_surtemp != '' or min_surtemp != '':
+        if max_surtemp == '':
+            error = True
+            tk_max_surtemp_entry.config(bg='LightPink1')
+        elif min_surtemp == '':
+            error = True
+            tk_min_surtemp_entry.config(bg='LightPink1')
+        elif is_number(max_surtemp) and is_number(min_surtemp) and float(max_surtemp) <= float(min_surtemp):
+            error = True
+            tk_max_surtemp_entry.config(bg='LightPink1')
+            tk_min_surtemp_entry.config(bg='LightPink1')
+
+
     if error == False:
+        tk_chkbox.config(state='disable')
+        tk_dir_entry.config(state='readonly')
+        tk_file_entry.config(state='readonly')
+        tk_dir_button.config(state='disable')
+        tk_file_button.config(state='disable')
+        tk_run_button.config(state='disable')
+        tk_max_airtemp_entry.config(state='readonly')
+        tk_min_airtemp_entry.config(state='readonly')
+        tk_max_surtemp_entry.config(state='readonly')
+        tk_min_surtemp_entry.config(state='readonly')
+
+        if max_airtemp != '':
+            MAX_AIR_TEMP = float(max_airtemp)
+        if min_airtemp != '':
+            MIN_AIR_TEMP = float(min_airtemp)
+        if max_surtemp != '':
+            MAX_SURFACE_TEMP = float(max_surtemp)
+        if min_surtemp != '':
+            MIN_SURFACE_TEMP = float(min_surtemp)
+
         QC_PATH = path
         if test_list_file:
             FWD_TEST_LIST_FILE = test_list_file
@@ -612,13 +701,6 @@ def set_global_vars():
         proj = mdb_files[0][0]
         PROJECT_NAME = left(proj, '.') + '_raw_qc_' + datetime.datetime.now().strftime('%Y%m%d')
         MDB_FILES = mdb_files
-
-        tk_chkbox.configure(state='disable')
-        tk_dir_entry.configure(state='readonly')
-        tk_file_entry.configure(state='readonly')
-        tk_dir_button.configure(state='disable')
-        tk_file_button.configure(state='disable')
-        tk_run_button.configure(state='disable')
 
         main()
         #tk_root.destroy()
@@ -660,49 +742,73 @@ def main():
     print('Success!')
 
 def set_up_gui():
-    global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str, tk_dir_button, tk_file_button, tk_run_button
+    global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str, tk_dir_button, tk_file_button, tk_run_button, \
+    tk_max_airtemp_str, tk_max_airtemp_entry, tk_min_airtemp_str, tk_min_airtemp_entry, tk_max_surtemp_str, tk_max_surtemp_entry, tk_min_surtemp_str, \
+    tk_min_surtemp_entry
     tk_root = tk.Tk()
-    tk_root.wm_title('Auto QC by Eric Rothfels ;)')
-    tk.Label(tk_root, text='Select the Project Folder Containing .mdb files', 
+    frame = tk.Frame(tk_root)
+    frame.pack()
+    bottom_frame = tk.Frame(tk_root)
+    bottom_frame.pack(side=tk.BOTTOM)
+
+    tk_root.wm_title('Auto QC')
+    tk.Label(frame, text='Select the Project Folder Containing .mdb files', 
         font = "Helvetica 18").grid(row=0, column=1, columnspan=3, padx=15,pady=15)
-    tk.Label(tk_root, text='Select the FWD Test List File', 
+    tk.Label(frame, text='Select the FWD Test List File', 
         font = "Helvetica 18").grid(row=2, column=1, columnspan=3, padx=15,pady=15)
     v = tk.IntVar()
-    tk_chkbox = tk.Checkbutton(tk_root, text="Make ArcGIS Shape File from FWD Tests", variable=v)
+    tk_chkbox = tk.Checkbutton(frame, text="Make ArcGIS Shape File from FWD Tests", variable=v)
     tk_chkbox.var = v
     tk_chkbox.grid(row=6, column=2, columnspan=2)
     #tk_chkbox.select()
-    tk.Label(tk_root, text='  \u2794 ', font = "Helvetica 14").grid(row=5, column=3, columnspan=1)
-    tk_dir_button = tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_dir)
+    tk.Label(bottom_frame, text='  \u2794 ', font = "Helvetica 14").grid(row=10, column=6, columnspan=1)
+    tk_dir_button = tk.Button(frame, text='Browse', font='Helvetica 12', command=set_selected_dir)
     tk_dir_button.grid(row=1, column=6, sticky=tk.W, padx=5,pady=5)
-    tk_file_button = tk.Button(tk_root, text='Browse', font='Helvetica 12', command=set_selected_file)
+    tk_file_button = tk.Button(frame, text='Browse', font='Helvetica 12', command=set_selected_file)
     tk_file_button.grid(row=3, column=6, sticky=tk.W, padx=5,pady=5)
-    tk_run_button = tk.Button(tk_root, text='Run', font='Helvetica 14', command=set_global_vars)
-    tk_run_button.grid(row=7, column=7, sticky=tk.W, padx=15,pady=15)
+    tk_run_button = tk.Button(bottom_frame, text='Run', font='Helvetica 14', command=set_global_vars)
+    tk_run_button.grid(row=10, column=7, sticky=tk.W, padx=15,pady=15)
     
-    tk.Label(tk_root, text='Project Folder:', 
+    tk.Label(frame, text='Project Folder:', 
         font = "Helvetica 12").grid(row=1, column=0, columnspan=1, padx=5,pady=5)
-    tk.Label(tk_root, text='FWD Test List File:\n(optional)', 
+    tk.Label(frame, text='FWD Test List File:\n(optional)', 
         font = "Helvetica 12").grid(row=3, column=0, columnspan=1, padx=5,pady=5)
     tk_dir_entry_str = tk.StringVar()
-    tk_dir_entry = tk.Entry(tk_root, textvariable=tk_dir_entry_str, width=100, readonlybackground='grey82')
+    tk_dir_entry = tk.Entry(frame, textvariable=tk_dir_entry_str, width=100, readonlybackground='grey82')
     tk_dir_entry.grid(row=1, column=1, columnspan=5)
     tk_file_entry_str = tk.StringVar()
-    tk_file_entry = tk.Entry(tk_root, textvariable=tk_file_entry_str, width=100, readonlybackground='grey82')
+    tk_file_entry = tk.Entry(frame, textvariable=tk_file_entry_str, width=100, readonlybackground='grey82')
     tk_file_entry.grid(row=3, column=1, columnspan=5)
 
-    ''' ###  temperature inputs: (need a separate frame)
-    tk.Label(tk_root, text='Max Temperature:\n(optional)', 
-        font = "Helvetica 12").grid(row=4, column=0, columnspan=1, padx=5,pady=5)
-    tk.Label(tk_root, text='Min Temperature:\n(optional)', 
-        font = "Helvetica 12").grid(row=5, column=0, columnspan=1, padx=5,pady=5)
-    tk_dir_entry_str = tk.StringVar()
-    tk_dir_entry = tk.Entry(tk_root, textvariable=tk_dir_entry_str, width=15, readonlybackground='grey82')
-    tk_dir_entry.grid(row=4, column=1, columnspan=5)
-    tk_file_entry_str = tk.StringVar()
-    tk_file_entry = tk.Entry(tk_root, textvariable=tk_file_entry_str, width=15, readonlybackground='grey82')
-    tk_file_entry.grid(row=5, column=1, columnspan=5)
-    '''
+    ###  temperature inputs: (need a separate frame)
+    tk.Label(bottom_frame, text='Issues, questions: Eric.Rothfels@stantec.com', 
+        font = "Helvetica 11").grid(row=10, column=0, columnspan=4, padx=5,pady=5)
+    tk.Label(bottom_frame, text='Air Temperature:\n(optional)', 
+        font = "Helvetica 11").grid(row=0, column=1, columnspan=1, padx=5,pady=5)
+    tk.Label(bottom_frame, text='Surface Temperature:\n(optional)', 
+        font = "Helvetica 11").grid(row=1, column=1, columnspan=1, padx=5,pady=5)
+    tk.Label(bottom_frame, text='Min:', 
+        font = "Helvetica 11").grid(row=0, column=2, columnspan=1, padx=5,pady=5)
+    tk.Label(bottom_frame, text='Max:', 
+        font = "Helvetica 11").grid(row=0, column=4, columnspan=1, padx=5,pady=5)
+    tk.Label(bottom_frame, text='Min:', 
+        font = "Helvetica 11").grid(row=1, column=2, columnspan=1, padx=5,pady=5)
+    tk.Label(bottom_frame, text='Max:', 
+        font = "Helvetica 11").grid(row=1, column=4, columnspan=1, padx=5,pady=5)
+    tk_max_airtemp_str = tk.StringVar()
+    tk_max_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_airtemp_str, width=10, readonlybackground='grey82')
+    tk_max_airtemp_entry.grid(row=0, column=5, columnspan=1)
+    tk_min_airtemp_str = tk.StringVar()
+    tk_min_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_airtemp_str, width=10, readonlybackground='grey82')
+    tk_min_airtemp_entry.grid(row=0, column=3, columnspan=1)
+    
+    tk_max_surtemp_str = tk.StringVar()
+    tk_max_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_surtemp_str, width=10, readonlybackground='grey82')
+    tk_max_surtemp_entry.grid(row=1, column=5, columnspan=1)
+    tk_min_surtemp_str = tk.StringVar()
+    tk_min_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_surtemp_str, width=10, readonlybackground='grey82')
+    tk_min_surtemp_entry.grid(row=1, column=3, columnspan=1)
+    
     #centre the window
     tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
     tk_root.mainloop()
