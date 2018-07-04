@@ -110,8 +110,8 @@ def find_mdb_files(path):
 def add_to_section_dict(mdb_data, mdb_file_name):
     global Section_No_Dict
     section_no_dict = {}
-    stationID_col = get_col(Data_Headers, 'StationID')
-    sect_col = get_col(Data_Headers, 'SECT_NO')
+    stationID_col = get_col_no(Data_Headers, 'StationID')
+    sect_col = get_col_no(Data_Headers, 'SECT_NO')
     if sect_col and stationID_col:
         for row in mdb_data:
             sect_no = row[sect_col]
@@ -137,54 +137,72 @@ def add_sect_no_check(mdb_file_name, sect_no):
 
 def make_test_list_dict():
     global Fwd_Test_List_Dict
-    sect_no_col = get_col_no(Fwd_Test_List[0], ['RT_NO', 'SECT_NO', 'FWD_NO']) or 0
-    for row in Fwd_Test_List[1:]:
-        sect_no = row[sect_no_col]
-        if is_number(sect_no):
-            sect_no = str(int(float(sect_no)))
-            Fwd_Test_List_Dict[sect_no] = row
+    sect_no_col = get_col_no(Fwd_Test_List[0], ['RT_NO', 'SECT_NO', 'FWD_NO'])
+    if sect_no_col != None:
+        for row in Fwd_Test_List[1:]:
+            sect_no = row[sect_no_col]
+            if is_number(sect_no):
+                sect_no = str(int(float(sect_no)))
+                Fwd_Test_List_Dict[sect_no] = row
+
+def check_test_list_file(file):
+    wb = xlrd.open_workbook(file)
+    for ws in wb.sheets():
+        headers = ws.row(0)
+        if headers:
+            header_list = []
+            for j, col in enumerate(range(ws.ncols)):
+                header_list.append(ws.cell_value(0, j))
+            sect_no_col = get_col_no(header_list, ['RT_NO', 'SECT_NO', 'FWD_NO'])
+            total_tests_col = get_col_no(header_list, ['TOTAL TESTS','TOTAL', 'TOT_TEST'])
+            if sect_no_col != None and total_tests_col != None:
+                return ws
+    return False
 
 def read_fwd_test_list():
     global Fwd_Test_List
-    wb = xlrd.open_workbook(FWD_TEST_LIST_FILE)
-    ws = wb.sheet_by_index(0)
-    if 'test list' in wb.sheet_names():
-        ws = wb.sheet_by_name('test list')
-
-    for i, row in enumerate(range(ws.nrows)):
-        r = []
-        for j, col in enumerate(range(ws.ncols)):
-            r.append(ws.cell_value(i, j))
-        Fwd_Test_List.append(r)
-    if Fwd_Test_List:
-        Fwd_Test_List[0].extend(['Field Tests', 'Compare Test Count', 'Insufficient Field Tests', 'Comments'])
-        make_test_list_dict()
+    if FWD_TEST_LIST_FILE == None:
+        return
+    ws = check_test_list_file(FWD_TEST_LIST_FILE)
+    if ws != False:
+        for i, row in enumerate(range(ws.nrows)):
+            r = []
+            for j, col in enumerate(range(ws.ncols)):
+                r.append(ws.cell_value(i, j))
+            Fwd_Test_List.append(r)
+        if Fwd_Test_List:
+            Fwd_Test_List[0].extend(['Field Tests', 'Compare Test Count', 'Insufficient Field Tests', 'Comments'])
+            make_test_list_dict()
 
 def check_section_length(station, section_no):
     if not (Fwd_Test_List_Dict and Fwd_Test_List):
         return
-    length_col = get_col(Fwd_Test_List[0], 'LENGTH')
+    length_col = get_col_no(Fwd_Test_List[0], 'LENGTH')
     if length_col:
         section_no = str(section_no)
         if section_no in Fwd_Test_List_Dict:
             row = Fwd_Test_List_Dict[section_no]
-            length = row[length_col]
-            if is_number(station) and is_number(length):
-                if float(station) > float(length):
-                    return str(int(float(length)))
+            if length_col < len(row):
+                length = row[length_col]
+                if is_number(station) and is_number(length):
+                    if float(station) > float(length):
+                        return str(int(float(length)))
 
 def get_col(headers, header_name):
     try:
-        fields = [h.upper() for h in headers]
-        return fields.index(header_name.upper())
+        return headers.index(header_name)
     except:
         return None
 
-def get_col_no(headers, name_list):
-    for name in name_list:
-        index = get_col(headers, name)
-        if index:
-            return index
+def get_col_no(headers, names):
+    if type(names) == str:
+        return get_col([str(h).upper() for h in headers], names.upper())
+    elif type(names) == list:
+        fields = [str(h).upper() for h in headers]
+        for name in names:
+            index = get_col(fields, name.upper())
+            if index != None:
+                return index
 
 def style_cell(ws, row, col):
     c = ws.cell(row=row, column=col)
@@ -199,44 +217,48 @@ def write_test_list_ws(wb):
 
     # write field test numbers, test list sheet
     headers = Fwd_Test_List[0]
-    sect_no_col = get_col_no(headers, ['RT_NO', 'SECT_NO', 'FWD_NO']) or 0
-    total_tests_col = 8 #get_col_no(headers, ['TOTAL TESTS','TOTAL', 'TOT_TEST']) or (len(headers) - 1)  ##########change this line!!!!!!!!!!!!!!!   should be (len(headers) - 1)
+    sect_no_col = get_col_no(headers, ['RT_NO', 'SECT_NO', 'FWD_NO'])
+    total_tests_col = get_col_no(headers, ['TOTAL TESTS','TOTAL', 'TOT_TEST'])
 
-    for col, header in enumerate(headers, start=1):
-        test_list_ws.cell(row=1, column=col).value = header
-    for i,row in enumerate(Fwd_Test_List[1:-1]): ################################ !!!!!!!!
-        style = None
-        sect_no = str(row[sect_no_col])
-        if is_number(sect_no):
-            sect_no = str(int(float(sect_no)))
-        if sect_no in Section_No_Dict:
-            field_tests, mdb_names_dict = Section_No_Dict[sect_no]
-            reqd_tests = row[total_tests_col]
-            row.append(field_tests)
-            if is_number(reqd_tests):
-                reqd_tests = int(round(float(reqd_tests), 0))
-                check = reqd_tests - field_tests
-                row.append(check)
-                if check > 0:
-                    for mdb_file_name in mdb_names_dict.keys():
-                        add_sect_no_check(mdb_file_name, sect_no)
-                    row.append('O')
-                    style = [i + 2, len(row)]
-                    Insufficient_Tests_Dict[sect_no] = None
-        else:
-            continue ############################################ !!!!!!!!!!!!!!!!!!!
-            row.append('0')
-            reqd_tests = row[total_tests_col]
-            if is_number(reqd_tests):
-                reqd_tests = int(round(float(reqd_tests), 0))
-                row.append(reqd_tests)
-                if reqd_tests > 0:
-                    row.append('O')
-                    style = [i + 2, len(row)]
-                    Insufficient_Tests_Dict[sect_no] = None
-        test_list_ws.append(row)
-        if style:
-            style_cell(test_list_ws, style[0], style[1])
+    if sect_no_col != None and total_tests_col != None:
+        for col, header in enumerate(headers, start=1):
+            test_list_ws.cell(row=1, column=col).value = header
+        for i,row in enumerate(Fwd_Test_List[1:]):
+            if len(row) > total_tests_col and len(row) > sect_no_col:
+                style = None
+                sect_no = str(row[sect_no_col])
+                if is_number(sect_no):
+                    sect_no = str(int(float(sect_no)))
+                if sect_no in Section_No_Dict:
+                    field_tests, mdb_names_dict = Section_No_Dict[sect_no]
+                    reqd_tests = row[total_tests_col]
+                    row.append(field_tests)
+                    if is_number(reqd_tests):
+                        reqd_tests = int(round(float(reqd_tests), 0))
+                        check = reqd_tests - field_tests
+                        row.append(check)
+                        if check > 0:
+                            for mdb_file_name in mdb_names_dict.keys():
+                                add_sect_no_check(mdb_file_name, sect_no)
+                            row.append('O')
+                            style = [i + 2, len(row)]
+                            Insufficient_Tests_Dict[sect_no] = None
+                else:
+                    row.append('0')
+                    reqd_tests = row[total_tests_col]
+                    if is_number(reqd_tests):
+                        reqd_tests = int(round(float(reqd_tests), 0))
+                        row.append(reqd_tests)
+                        if reqd_tests > 0:
+                            row.append('O')
+                            style = [i + 2, len(row)]
+                            Insufficient_Tests_Dict[sect_no] = None
+                test_list_ws.append(row)
+                if style != None:
+                    style_cell(test_list_ws, style[0], style[1])
+    else:
+        for row in Fwd_Test_List:
+            test_list_ws.append(row)
 
 def write_summary_ws(wb):
     summary_ws = wb.worksheets[0]
@@ -258,9 +280,9 @@ def write_summary_ws(wb):
             style_cell(summary_ws, i + 2, 20)
 
 def in_station_id_dict(row, headers):
-    drop_col = get_col(headers, 'DropID')
-    file_col = get_col(headers, 'File')
-    stationID_col = get_col(headers, 'StationID')
+    drop_col = get_col_no(headers, 'DropID')
+    file_col = get_col_no(headers, 'File')
+    stationID_col = get_col_no(headers, 'StationID')
     if stationID_col and drop_col:
         key = (row[stationID_col], row[file_col], row[drop_col])
         if key in Station_IDs_Dict:
@@ -275,8 +297,8 @@ def write_data_ws(ws, data_list, headers):
     for col, header in enumerate(headers, start=1):
         ws.cell(row=1, column=col).value = header
 
-    sect_col = get_col(headers, 'SECT_NO')
-    station_col = get_col(headers, 'Station')
+    sect_col = get_col_no(headers, 'SECT_NO')
+    station_col = get_col_no(headers, 'Station')
     for i,row in enumerate(data_list):
         checks = ['', '', '']
         if station_col and sect_col:
@@ -285,20 +307,20 @@ def write_data_ws(ws, data_list, headers):
                 # station > length, highlight bad
                 checks[2] = 'Section Length: ' + stn_chk
         j = in_station_id_dict(row, headers)
-        if j:
+        if j != False:
             # increasing deflection
             checks[0] = 'O'
         if sect_col and row[sect_col] in Insufficient_Tests_Dict:
             checks[1] = 'O'
         row.extend(checks)
         ws.append(row)
-        if j:
+        if j != False:
             # increasing deflection, highlight this cell
             highlight_cell(ws, i + 2, j + 1, highlight)
             style_cell(ws, i + 2, len(row) - 2)
-        if checks[1]:
+        if len(checks[1]) > 0 :
             style_cell(ws, i + 2, len(row) - 1)
-        if checks[2]:
+        if len(checks[2]) > 0:
             highlight_cell(ws, i + 2, station_col + 1, highlight)
             highlight_cell(ws, i + 2, len(row), highlight)
 
@@ -324,10 +346,10 @@ def write_excel_file():
 
 def write_kml(file_path, color, row_dict=None):
     kml = simplekml.Kml()
-    sect_col = get_col(Data_Headers, 'SECT_NO')
-    slab_col = get_col(Data_Headers, 'SlabID')
-    lat_col = get_col(Data_Headers, 'Latitude')
-    long_col = get_col(Data_Headers, 'Longitude')
+    sect_col = get_col_no(Data_Headers, 'SECT_NO')
+    slab_col = get_col_no(Data_Headers, 'SlabID')
+    lat_col = get_col_no(Data_Headers, 'Latitude')
+    long_col = get_col_no(Data_Headers, 'Longitude')
     if not (lat_col and long_col):
         return
 
@@ -355,13 +377,13 @@ def write_bad_drops_kml():
         write_kml(os.path.join(QC_PATH, PROJECT_NAME + '_stations_with_increasing_deflection.kml'), 'red', row_dict)
 
 def write_bad_sections_kml():
-    sect_col = get_col(Data_Headers, 'SECT_NO')
-    stationID_col = get_col(Data_Headers, 'StationID')
+    sect_col = get_col_no(Data_Headers, 'SECT_NO')
+    stationID_col = get_col_no(Data_Headers, 'StationID')
     if not (Insufficient_Tests_Dict and sect_col and stationID_col):
         return
     row_dict = {}
     section_no_dict = {}
-    file_col = get_col(Data_Headers, 'File')
+    file_col = get_col_no(Data_Headers, 'File')
     
     for i,row in enumerate(Data_List):
         key = (row[sect_col], row[stationID_col], row[file_col])
@@ -379,18 +401,18 @@ def check_coords(lats,longs):
             if lat <= avg_lat + 2 or lat >= avg_lat - 2:'''
 
 def add_columns(data_rows, mdb_file_name):
-    sect_col = get_col(Data_Headers, 'SECT_NO')
+    sect_col = get_col_no(Data_Headers, 'SECT_NO')
     mdb_data = []
     for row in data_rows:
         row = [mdb_file_name] + [x for x in row]
-        if sect_col:
+        if sect_col and len(row) > sect_col:
             row.insert(sect_col, left(row[sect_col], '-'))
         mdb_data.append(row)
     return mdb_data
 
 def add_headers(headers):
     headers = ['File'] + [col[0] for col in headers] + ['Decreasing Deflections', 'Insufficient Field Tests', 'Station < Section Length']
-    slab_col = get_col(headers, 'SlabID')
+    slab_col = get_col_no(headers, 'SlabID')
     if slab_col:
         headers.insert(slab_col, 'SECT_NO')
     return headers
@@ -408,26 +430,26 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     data_transposed = [*zip(*mdb_data)]
     #summary stats
     completed_tests = len(mdb_data)
-    station_col = get_col(Data_Headers, 'Station')
+    station_col = get_col_no(Data_Headers, 'Station')
     if station_col:
         max_station = round(max(data_transposed[station_col]), 1)
     else:
         max_station = ''
-    temp_col = get_col(Data_Headers, 'Surface')
+    temp_col = get_col_no(Data_Headers, ['Surface', 'SurfaceTemperature'])
     if temp_col:
         min_surface_temp = round(min(data_transposed[temp_col]), 1)
         max_surface_temp = round(max(data_transposed[temp_col]), 1)
     else:
         min_surface_temp = ''
         max_surface_temp = ''
-    temp_col = get_col(Data_Headers, 'Air')
+    temp_col = get_col_no(Data_Headers, ['Air', 'AirTemperature'])
     if temp_col:
         min_air_temp = round(min(data_transposed[temp_col]), 1)
         max_air_temp = round(max(data_transposed[temp_col]), 1)
     else:
         min_air_temp = ''
         max_air_temp = ''
-    time_col = get_col(Data_Headers, 'Time')
+    time_col = get_col_no(Data_Headers, 'Time')
     if time_col:
         times = data_transposed[time_col]
         date = times[0].strftime('%m/%d/%Y')
@@ -439,10 +461,10 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
         to_time = ''
 
     station_ids = {}
-    d1_col = get_col(Data_Headers, 'D1')
-    drop_col = get_col(Data_Headers, 'DropID')
-    stationID_col = get_col(Data_Headers, 'StationID')
-    sect_col = get_col(Data_Headers, 'SECT_NO')
+    d1_col = get_col_no(Data_Headers, 'D1')
+    drop_col = get_col_no(Data_Headers, 'DropID')
+    stationID_col = get_col_no(Data_Headers, 'StationID')
+    sect_col = get_col_no(Data_Headers, 'SECT_NO')
     stn_chk_ids = {}
     for row in mdb_data:
         if station_col and sect_col and stationID_col:
@@ -520,7 +542,8 @@ def check_selected_file(wf):
     if wf:
         wf = wf.replace('/', '\\')
         if os.path.isfile(wf) and \
-        (wf.lower().endswith('.xls') or wf.lower().endswith('.xlsx') or wf.lower().endswith('.xlsm')):
+        (wf.lower().endswith('.xls') or wf.lower().endswith('.xlsx') or wf.lower().endswith('.xlsm')) and \
+        check_test_list_file(wf):
             return wf
     return False
 
@@ -531,7 +554,7 @@ def set_selected_file():
 
     wd = tk_dir_entry_str.get()
     field_data = check_selected_dir(wd)
-    if field_data:
+    if field_data != False:
         phase = left(field_data,'field_data')
         options['initialdir'] = phase
         if len(field_data) > len(phase):
@@ -563,11 +586,11 @@ def set_global_vars():
             messagebox.showinfo('', 'This program can only read Excel Test Specification files.')
             error = True
 
-    if not path:
+    if path == False:
         messagebox.showinfo('', 'Please select the project folder containing ALL of the .mdb files.')
         error = True
 
-    if not error:
+    if error == False:
         QC_PATH = path
         if test_list_file:
             FWD_TEST_LIST_FILE = test_list_file
@@ -613,8 +636,7 @@ def open_files(qc_file):
 def main():
     if not (QC_PATH and MDB_FILES):
         exit()
-    if FWD_TEST_LIST_FILE:
-        read_fwd_test_list()
+    read_fwd_test_list()
     query_mdb_data()
     qc_file = write_excel_file()
     kml_file = write_kml_file()
