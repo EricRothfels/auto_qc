@@ -279,21 +279,28 @@ def write_summary_ws(wb):
         if not s.station_check:
             style_cell(summary_ws, i + 2, 20)
 
-def in_station_id_dict(row, headers):
-    drop_col = get_col_no(headers, 'DropID')
+def in_station_id_dict(row, headers, stn_data_bool=False):
     file_col = get_col_no(headers, 'File')
     stationID_col = get_col_no(headers, 'StationID')
-    if stationID_col and drop_col:
-        key = (row[stationID_col], row[file_col], row[drop_col])
-        if key in Station_IDs_Dict:
-            return Station_IDs_Dict[key]
+    if stn_data_bool:
+        for key in Station_IDs_Dict.keys():
+            stn_id, file, drop_id = key
+            if stationID_col != None:
+                if row[file_col] == file and row[stationID_col] == stn_id:
+                    return Station_IDs_Dict[key]
+    else:
+        drop_col = get_col_no(headers, 'DropID')
+        if stationID_col != None and drop_col != None:
+            key = (row[stationID_col], row[file_col], row[drop_col])
+            if key in Station_IDs_Dict:
+                return Station_IDs_Dict[key]
     return False
 
 def highlight_cell(ws, row, col, highlight):
     xls_cell = ws.cell(row=row, column=col)
     xls_cell.style = highlight
 
-def write_data_ws(ws, data_list, headers):
+def write_data_ws(ws, data_list, headers, stn_data_bool=False):
     for col, header in enumerate(headers, start=1):
         ws.cell(row=1, column=col).value = header
 
@@ -306,7 +313,7 @@ def write_data_ws(ws, data_list, headers):
             if stn_chk:
                 # station > length, highlight bad
                 checks[2] = 'Section Length: ' + stn_chk
-        j = in_station_id_dict(row, headers)
+        j = in_station_id_dict(row, headers, stn_data_bool)
         if j != False:
             # increasing deflection
             checks[0] = 'O'
@@ -316,7 +323,8 @@ def write_data_ws(ws, data_list, headers):
         ws.append(row)
         if j != False:
             # increasing deflection, highlight this cell
-            highlight_cell(ws, i + 2, j + 1, highlight)
+            if not stn_data_bool:
+                highlight_cell(ws, i + 2, j + 1, highlight)
             style_cell(ws, i + 2, len(row) - 2)
         if len(checks[1]) > 0 :
             style_cell(ws, i + 2, len(row) - 1)
@@ -332,7 +340,7 @@ def write_station_ws(wb):
     drops_ws = wb['Stations & Drops']
     global Data_Headers, Data_List, Stations_Data_List, Stations_Data_Headers
     write_data_ws(drops_ws, Data_List, Data_Headers)
-    write_data_ws(stations_ws, Stations_Data_List, Stations_Data_Headers)
+    write_data_ws(stations_ws, Stations_Data_List, Stations_Data_Headers, True)
 
 def write_excel_file():
     wb = load_workbook(TEMPLATE_FILE)
@@ -404,7 +412,7 @@ def add_columns(data_rows, mdb_file_name):
     sect_col = get_col_no(Data_Headers, 'SECT_NO')
     mdb_data = []
     for row in data_rows:
-        row = [mdb_file_name] + [x for x in row]
+        row = [mdb_file_name] + [x for x in row]# + ['', '', '']
         if sect_col and len(row) > sect_col:
             row.insert(sect_col, left(row[sect_col], '-'))
         mdb_data.append(row)
@@ -465,19 +473,24 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     drop_col = get_col_no(Data_Headers, 'DropID')
     stationID_col = get_col_no(Data_Headers, 'StationID')
     sect_col = get_col_no(Data_Headers, 'SECT_NO')
+    #stn_len_chk_col = get_col_no(Data_Headers, 'Station < Section Length')
+    #deflections_chk_col = get_col_no(Data_Headers, 'Decreasing Deflections')
     stn_chk_ids = {}
     for row in mdb_data:
         if station_col and sect_col and stationID_col:
             stn_chk = check_section_length(row[station_col], row[sect_col])
-            if stn_chk:
+            if stn_chk:# and stn_len_chk_col and stn_len_chk_col < len(row):
                 # highlight bad
                 stn_chk_ids[str(row[stationID_col])] = None
+                #row[stn_len_chk_col] = 'O'
         if d1_col and stationID_col and drop_col:
             for i in range(d1_col, d1_col + 7):
                 if row[i] < row[i + 1]:
                     station_ids[str(row[stationID_col])] = None
                     key = (row[stationID_col], mdb_file_name, row[drop_col])
                     Station_IDs_Dict[key] = i + 1
+                    #if deflections_chk_col and deflections_chk_col < len(row):
+                    #    row[deflections_chk_col] = 'O'
                     break
     if station_ids:
         station_ids = 'StationID ' + ', '.join(station_ids.keys())
