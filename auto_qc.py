@@ -28,6 +28,13 @@ ARCGIS_PY_SCRIPT = os.path.join(CWD, 'gen_arcgis_file.py')
 MAKE_ARCGIS_FILE = False
 MDB_FILES = None
 
+GPS_BOUNDS = [{'max_lat':60,'min_lat':49,'min_long':-120,'max_long':-110},\
+            {'max_lat':60,'min_lat':49,'min_long':-139.058333,'max_long':-114.058333},\
+            {'max_lat':56.9,'min_lat':41.908333,'min_long':-95.153333,'max_long':-74.343333},\
+            {'max_lat':70,'min_lat':41.908333,'min_long':-141,'max_long':-52.6166667},\
+            {'max_lat':49.388888,'min_lat':24.543333,'min_long':-124.5666667,'max_long':-66.95}]
+GPS_CHECK = None
+
 Summary_Stats_List = []
 Section_No_Dict = {}
 Data_List = []
@@ -59,13 +66,14 @@ tk_max_surtemp_entry = None
 tk_min_surtemp_entry = None
 tk_name_str = None
 tk_name_entry = None
+tk_gps_var = None
 
 highlight = NamedStyle(name="highlight")
 highlight.fill = PatternFill("solid", fgColor="f5b7b1")
 
 class Summary_Stats:
     def __init__(self, mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
-        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check):
+        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check, gps_check):
         self.date = date
         self.max_station = max_station
         self.min_surface_temp = min_surface_temp
@@ -81,6 +89,7 @@ class Summary_Stats:
         self.station_check = station_check
         self.surface_temp_check = surface_temp_check
         self.air_temp_check = air_temp_check
+        self.gps_check = gps_check
 
 def is_number(value):
   try:
@@ -282,14 +291,16 @@ def write_summary_ws(wb):
     for i,s in enumerate(Summary_Stats_List):
         if not s.sect_no_check and FWD_TEST_LIST_FILE:
             s.sect_no_check = 'P'
+        if not s.station_check and FWD_TEST_LIST_FILE:
+            s.station_check = 'P'
         row = (s.date, s.from_time, s.to_time, s.mdb_file_name, '', '', '', s.completed_tests, '', s.sect_no_check, s.max_station, s.surface_temp_check,
-            s.min_surface_temp, s.max_surface_temp, s.air_temp_check, s.min_air_temp, s.max_air_temp, '', s.station_ids or 'P', s.station_check or 'P')
+            s.min_surface_temp, s.max_surface_temp, s.air_temp_check, s.min_air_temp, s.max_air_temp, s.gps_check, s.station_ids or 'P', s.station_check)
         summary_ws.append(row)
         if not s.station_ids:
             style_cell(summary_ws, i + 2, 19)
         if s.sect_no_check == 'P' and FWD_TEST_LIST_FILE:
             style_cell(summary_ws, i + 2, 10)
-        if not s.station_check:
+        if s.station_check == 'P' and FWD_TEST_LIST_FILE:
             style_cell(summary_ws, i + 2, 20)
 
 def in_station_id_dict(row, headers, stn_data_bool=False):
@@ -435,11 +446,40 @@ def write_bad_sections_kml():
         write_kml(os.path.join(QC_PATH, PROJECT_NAME + '_sections_with_insufficient_tests.kml'), 'red', row_dict)
 
 def check_coords(lats,longs):
-        avg_lat = mean(lats)
-        avg_long = mean(longs)
-        '''
-        for lat in lats:
-            if lat <= avg_lat + 2 or lat >= avg_lat - 2:'''
+    if not (lats and longs):
+        return False
+    chk = True
+    avg_lat = mean(lats)
+    avg_long = mean(longs)
+    bounds = None
+    tolerance = 4
+
+    if GPS_CHECK != None:
+        bounds = GPS_BOUNDS[GPS_CHECK]
+    for lat in lats:
+        if not lat:
+            chk = False
+            break
+        elif lat > avg_lat + tolerance or lat < avg_lat - tolerance:
+            chk = False
+            break
+        elif bounds != None:
+            if lat > bounds['max_lat'] or lat < bounds['min_lat']:
+                chk = False
+                break
+    for lng in longs:
+        if not lng:
+            chk = False
+            break
+        elif lng > avg_long + tolerance or lng < avg_long - tolerance:
+            chk = False
+            break
+        elif bounds != None:
+            if lng > bounds['max_long'] or lng < bounds['min_long']:
+                chk = False
+                break
+    return chk
+
 
 def add_columns(data_rows, mdb_file_name):
     sect_col = get_col_no(Data_Headers, 'SECT_NO')
@@ -545,8 +585,19 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
         station_check = 'StationID ' + ', '.join(stn_chk_ids.keys())
     else:
         station_check = ''
+    gps_check = ''
+    if GPS_CHECK != None:
+        lat_col = get_col_no(Data_Headers, 'Latitude')
+        long_col = get_col_no(Data_Headers, 'Longitude')
+        if lat_col and long_col and lat_col < len(data_transposed) and long_col < len(data_transposed):
+            gps_check = check_coords(data_transposed[lat_col], data_transposed[long_col])
+            if gps_check:
+                gps_check = 'good'
+            else:
+                gps_check = 'bad'
+
     summary_stats = Summary_Stats(mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
-        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check)
+        min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check, gps_check)
 
     global Summary_Stats_List
     Summary_Stats_List.append(summary_stats)
@@ -641,7 +692,7 @@ def set_selected_file():
 
 def set_global_vars():
     global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE, MDB_FILES, \
-    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP
+    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP, GPS_CHECK
     error = False
 
     path = check_selected_dir(tk_dir_entry_str.get())
@@ -695,7 +746,6 @@ def set_global_vars():
             tk_max_surtemp_entry.config(bg='LightPink1')
             tk_min_surtemp_entry.config(bg='LightPink1')
 
-
     if error == False:
         tk_chkbox.config(state='disable')
         tk_dir_entry.config(state='readonly')
@@ -724,6 +774,10 @@ def set_global_vars():
         MAKE_ARCGIS_FILE = bool(tk_chkbox.var.get())
         mdb_files = find_mdb_files(path)
         proj = mdb_files[0][0]
+
+        gps_check = tk_gps_var.get()
+        if gps_check != -1:
+            GPS_CHECK = gps_check
 
         proj_name = tk_name_entry.get()
         if proj_name != '':
@@ -773,11 +827,13 @@ def main():
 
 def set_up_gui():
     global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str, tk_dir_button, tk_file_button, tk_run_button, \
-    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry
+    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry, tk_gps_var
     tk_root = tk.Tk()
-    frame = tk.Frame(tk_root)
-    frame.pack()
-    bottom_frame = tk.Frame(tk_root)
+    frame = tk.Frame(tk_root, borderwidth=1)
+    frame.pack(side=tk.TOP)
+    middle_frame = tk.Frame(tk_root, borderwidth=10)
+    middle_frame.pack()
+    bottom_frame = tk.Frame(tk_root, borderwidth=2)
     bottom_frame.pack(side=tk.BOTTOM)
 
     tk_root.wm_title('Auto QC')
@@ -785,10 +841,6 @@ def set_up_gui():
         font = "Helvetica 18").grid(row=0, column=1, columnspan=3, padx=15,pady=15)
     tk.Label(frame, text='Select the FWD Test List File', 
         font = "Helvetica 18").grid(row=2, column=1, columnspan=3, padx=15,pady=15)
-    v = tk.IntVar()
-    tk_chkbox = tk.Checkbutton(frame, text="Make ArcGIS Shape File from FWD Tests", variable=v)
-    tk_chkbox.var = v
-    tk_chkbox.grid(row=6, column=2, columnspan=2)
     #tk_chkbox.select()
     tk.Label(bottom_frame, text='  \u2794 ', font = "Helvetica 14").grid(row=10, column=6, columnspan=1)
     tk_dir_button = tk.Button(frame, text='Browse', font='Helvetica 12', command=set_selected_dir)
@@ -803,10 +855,10 @@ def set_up_gui():
     tk.Label(frame, text='FWD Test List File:\n(optional)', 
         font = "Helvetica 12").grid(row=3, column=0, columnspan=1, padx=5,pady=5)
     tk_dir_entry_str = tk.StringVar()
-    tk_dir_entry = tk.Entry(frame, textvariable=tk_dir_entry_str, width=100, readonlybackground='grey82')
+    tk_dir_entry = tk.Entry(frame, textvariable=tk_dir_entry_str, width=100, readonlybackground='grey85')
     tk_dir_entry.grid(row=1, column=1, columnspan=5)
     tk_file_entry_str = tk.StringVar()
-    tk_file_entry = tk.Entry(frame, textvariable=tk_file_entry_str, width=100, readonlybackground='grey82')
+    tk_file_entry = tk.Entry(frame, textvariable=tk_file_entry_str, width=100, readonlybackground='grey85')
     tk_file_entry.grid(row=3, column=1, columnspan=5)
 
     ###  temperature inputs: (need a separate frame)
@@ -825,22 +877,43 @@ def set_up_gui():
     tk.Label(bottom_frame, text='Max:', 
         font = "Helvetica 11").grid(row=1, column=4, columnspan=1, padx=5,pady=5)
     tk_max_airtemp_str = tk.StringVar()
-    tk_max_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_airtemp_str, width=10, readonlybackground='grey82')
+    tk_max_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_airtemp_str, width=10, readonlybackground='grey85')
     tk_max_airtemp_entry.grid(row=0, column=5, columnspan=1)
     tk_min_airtemp_str = tk.StringVar()
-    tk_min_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_airtemp_str, width=10, readonlybackground='grey82')
+    tk_min_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_airtemp_str, width=10, readonlybackground='grey85')
     tk_min_airtemp_entry.grid(row=0, column=3, columnspan=1)
     tk_max_surtemp_str = tk.StringVar()
-    tk_max_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_surtemp_str, width=10, readonlybackground='grey82')
+    tk_max_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_surtemp_str, width=10, readonlybackground='grey85')
     tk_max_surtemp_entry.grid(row=1, column=5, columnspan=1)
     tk_min_surtemp_str = tk.StringVar()
-    tk_min_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_surtemp_str, width=10, readonlybackground='grey82')
+    tk_min_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_surtemp_str, width=10, readonlybackground='grey85')
     tk_min_surtemp_entry.grid(row=1, column=3, columnspan=1)
     tk.Label(bottom_frame, text='Output File Name:\n(optional)', 
         font = "Helvetica 11").grid(row=2, column=1, columnspan=1, padx=5,pady=5)
     tk_name_str = tk.StringVar()
-    tk_name_entry = tk.Entry(bottom_frame, textvariable=tk_name_str, width=30, readonlybackground='grey82')
+    tk_name_entry = tk.Entry(bottom_frame, textvariable=tk_name_str, width=30, readonlybackground='grey85')
     tk_name_entry.grid(row=2, column=2, columnspan=3)
+    v = tk.IntVar()
+    tk_chkbox = tk.Checkbutton(bottom_frame, text="Make ArcGIS Shape File from FWD Tests", variable=v)
+    tk_chkbox.var = v
+    tk_chkbox.grid(row=3, column=2, columnspan=3, padx=15,pady=20)
+
+    tk.Label(middle_frame, text='Location of FWD Tests:\nfor GPS Check\n(optional)', 
+        font = "Helvetica 11").grid(row=0, column=0, rowspan=3,columnspan=1, padx=5,pady=5)
+    tk_gps_var = tk.IntVar()
+    R1 = tk.Radiobutton(middle_frame, text="No GPS Check", variable=tk_gps_var, value=-1)
+    R1.grid(row=0, column=1)
+    R1.select()
+    R1 = tk.Radiobutton(middle_frame, text="Alberta", variable=tk_gps_var, value=0)
+    R1.grid(row=1, column=1)
+    R2 = tk.Radiobutton(middle_frame, text="British Columbia", variable=tk_gps_var, value=1)
+    R2.grid(row=2, column=1)
+    R3 = tk.Radiobutton(middle_frame, text="Ontario", variable=tk_gps_var, value=2)
+    R3.grid(row=0, column=2)
+    R1 = tk.Radiobutton(middle_frame, text="Canada", variable=tk_gps_var, value=3)
+    R1.grid(row=1, column=2)
+    R2 = tk.Radiobutton(middle_frame, text="USA (Contiguous)", variable=tk_gps_var, value=4)
+    R2.grid(row=2, column=2)
     
     #centre the window
     tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
