@@ -8,7 +8,7 @@ import traceback
 from io import StringIO
 from statistics import mean
 import xlrd
-import simplekml
+from simplekml import Kml, Style
 import datetime
 
 if getattr(sys, 'frozen', False):
@@ -400,28 +400,27 @@ def write_kml(file_path, color, row_dict=None):
     if not (lat_col and long_col):
         return
 
-    kml = simplekml.Kml()
-    schema = kml.newschema(name='point')
-    schema.newsimplefield(name='file', type='string', displayname='File')
-    schema.newsimplefield(name='stationID', type='int', displayname='StationID')
-    schema.newsimplefield(name='station', type='float', displayname='Station')
-    schema.newsimplefield(name='lane', type='int', displayname='Lane')
-
+    kml = Kml()
+    sharedstyle = Style()
+    sharedstyle.iconstyle.icon.href = 'http://www.google.com/intl/en_us/mapfiles/ms/icons/' + color + '-dot.png'
+    #'http://maps.google.com/mapfiles/kml/paddle/' + color + '-circle.png'
     for i,row in enumerate(Data_List):
         if not row_dict or  i in row_dict:
-            if sect_col and slab_col and sect_col < len(row) and slab_col < len(row):
-                pt = kml.newpoint(name=str(row[slab_col]), description=str(row[sect_col]), coords=[(row[long_col], row[lat_col])])
-                pt.extendeddata.schemadata.schemaurl = schema.id
+            if sect_col != None and slab_col != None and sect_col < len(row) and slab_col < len(row):
+                pt = kml.newpoint(name=str(row[slab_col]), coords=[(row[long_col], row[lat_col])])
                 if file_col != None and file_col < len(row):
-                    pt.extendeddata.schemadata.newsimpledata('file', row[file_col])
+                    pt.extendeddata.newdata(name='File', value=row[file_col])
+                pt.extendeddata.newdata(name='Sect_No', value=row[sect_col])
                 if stationID_col != None and stationID_col < len(row):
-                    pt.extendeddata.schemadata.newsimpledata('stationID', row[stationID_col])
+                    pt.extendeddata.newdata(name='StationID', value=row[stationID_col])
                 if station_col != None and station_col < len(row):
-                    pt.extendeddata.schemadata.newsimpledata('station', row[station_col])
+                    stn = row[station_col]
+                    if is_number(stn):
+                        stn = round(float(row[station_col]), 1)
+                    pt.extendeddata.newdata(name='Station', value=stn)
                 if lane_col != None and lane_col < len(row):
-                    pt.extendeddata.schemadata.newsimpledata('lane', row[lane_col])
-                pt.style.iconstyle.icon.href = 'http://www.google.com/intl/en_us/mapfiles/ms/icons/' + color + '-dot.png'
-                #'http://maps.google.com/mapfiles/kml/paddle/' + color + '-circle.png'
+                    pt.extendeddata.newdata(name='Lane', value=row[lane_col])
+                pt.style = sharedstyle
     kml.save(file_path)
 
 def write_kml_file():
