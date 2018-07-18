@@ -134,7 +134,7 @@ def add_to_section_dict(mdb_data, mdb_file_name):
     section_no_dict = {}
     stationID_col = get_col_no(Data_Headers, 'StationID')
     sect_col = get_col_no(Data_Headers, 'SECT_NO')
-    if sect_col and stationID_col:
+    if sect_col != None and stationID_col != None:
         for row in mdb_data:
             sect_no = row[sect_col]
             key = (row[stationID_col], sect_no)
@@ -200,7 +200,7 @@ def check_section_length(station, section_no):
     if not (Fwd_Test_List_Dict and Fwd_Test_List):
         return
     length_col = get_col_no(Fwd_Test_List[0], 'LENGTH')
-    if length_col:
+    if length_col != None:
         section_no = str(section_no)
         if section_no in Fwd_Test_List_Dict:
             row = Fwd_Test_List_Dict[section_no]
@@ -209,6 +209,17 @@ def check_section_length(station, section_no):
                 if is_number(station) and is_number(length):
                     if float(station) > float(length):
                         return str(int(float(length)))
+
+def get_rm_no(section_no):
+    if not (Fwd_Test_List_Dict and Fwd_Test_List):
+        return
+    rm_no_col = get_col_no(Fwd_Test_List[0], 'RM_NO')
+    if rm_no_col != None:
+        section_no = str(section_no)
+        if section_no in Fwd_Test_List_Dict:
+            row = Fwd_Test_List_Dict[section_no]
+            if rm_no_col < len(row):
+                return row[rm_no_col]
 
 def get_col(headers, header_name):
     try:
@@ -246,7 +257,7 @@ def write_test_list_ws(wb):
         for col, header in enumerate(headers, start=1):
             test_list_ws.cell(row=1, column=col).value = header
         for i,row in enumerate(Fwd_Test_List[1:]):
-            if len(row) > total_tests_col and len(row) > sect_no_col:
+            if len(row) > total_tests_col and sect_no_col < len(row):
                 style = None
                 sect_no = str(row[sect_no_col])
                 if is_number(sect_no):
@@ -332,7 +343,7 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
     station_col = get_col_no(headers, 'Station')
     for i,row in enumerate(data_list):
         checks = ['', '', '']
-        if station_col and sect_col:
+        if station_col != None and sect_col != None:
             stn_chk = check_section_length(row[station_col], row[sect_col])
             if stn_chk:
                 # station > length, highlight bad
@@ -480,22 +491,33 @@ def check_coords(lats,longs):
                 break
     return chk
 
-
 def add_columns(data_rows, mdb_file_name):
     sect_col = get_col_no(Data_Headers, 'SECT_NO')
+    rm_no_col = get_col_no(Data_Headers, 'RM_NO')
+    slab_col = get_col_no(Data_Headers, 'SlabID')
     mdb_data = []
     for row in data_rows:
-        row = [mdb_file_name] + [x for x in row]# + ['', '', '']
-        if sect_col and len(row) > sect_col:
-            row.insert(sect_col, left(row[sect_col], '-'))
+        row = [mdb_file_name] + [x for x in row] # + ['', '', '']
+        if slab_col != None and len(row) > slab_col and sect_col != None:
+            sect_no = left(row[slab_col], '-')
+            row.insert(sect_col, sect_no)
+            if rm_no_col != None:
+                rm_no = get_rm_no(sect_no)
+                if rm_no == None:
+                    rm_no = ''
+                row.insert(rm_no_col, rm_no)
         mdb_data.append(row)
     return mdb_data
 
 def add_headers(headers):
     headers = ['File'] + [col[0] for col in headers] + ['Decreasing Deflections', 'Insufficient Field Tests', 'Station < Section Length']
     slab_col = get_col_no(headers, 'SlabID')
-    if slab_col:
-        headers.insert(slab_col, 'SECT_NO')
+    if slab_col != None:
+        headers.insert(slab_col + 1, 'SECT_NO')
+        if FWD_TEST_LIST_FILE and Fwd_Test_List:
+            rm_no_col = get_col_no(Fwd_Test_List[0], 'RM_NO')
+            if rm_no_col != None:
+                headers.insert(slab_col + 2, 'RM_NO')
     return headers
 
 def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_headers):
@@ -512,14 +534,14 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     #summary stats
     completed_tests = len(mdb_data)
     station_col = get_col_no(Data_Headers, 'Station')
-    if station_col:
+    if station_col != None:
         max_station = round(max(data_transposed[station_col]), 1)
     else:
         max_station = ''
     temp_col = get_col_no(Data_Headers, ['Surface', 'SurfaceTemperature'])
     surface_temp_check = ''
     air_temp_check = ''
-    if temp_col:
+    if temp_col != None:
         min_surface_temp = round(min(data_transposed[temp_col]), 1)
         max_surface_temp = round(max(data_transposed[temp_col]), 1)
         if MAX_SURFACE_TEMP and MIN_SURFACE_TEMP:
@@ -531,7 +553,7 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
         min_surface_temp = ''
         max_surface_temp = ''
     temp_col = get_col_no(Data_Headers, ['Air', 'AirTemperature'])
-    if temp_col:
+    if temp_col != None:
         min_air_temp = round(min(data_transposed[temp_col]), 1)
         max_air_temp = round(max(data_transposed[temp_col]), 1)
         if MAX_AIR_TEMP and MIN_AIR_TEMP:
@@ -543,7 +565,7 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
         min_air_temp = ''
         max_air_temp = ''
     time_col = get_col_no(Data_Headers, 'Time')
-    if time_col:
+    if time_col != None:
         times = data_transposed[time_col]
         date = times[0].strftime('%m/%d/%Y')
         from_time = min(times).strftime('%H:%M')
@@ -562,13 +584,13 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     #deflections_chk_col = get_col_no(Data_Headers, 'Decreasing Deflections')
     stn_chk_ids = {}
     for row in mdb_data:
-        if station_col and sect_col and stationID_col:
+        if station_col != None and sect_col != None and stationID_col != None:
             stn_chk = check_section_length(row[station_col], row[sect_col])
             if stn_chk:# and stn_len_chk_col and stn_len_chk_col < len(row):
                 # highlight bad
                 stn_chk_ids[str(row[stationID_col])] = None
                 #row[stn_len_chk_col] = 'O'
-        if d1_col and stationID_col and drop_col:
+        if d1_col != None and stationID_col != None and drop_col != None:
             for i in range(d1_col, d1_col + 7):
                 if row[i] < row[i + 1]:
                     station_ids[str(row[stationID_col])] = None
