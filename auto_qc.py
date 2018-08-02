@@ -51,6 +51,9 @@ MIN_AIR_TEMP = None
 MAX_SURFACE_TEMP = None
 MIN_SURFACE_TEMP = None
 
+D1_CHECK = None
+D1_MAX = [80, 100]
+
 tk_root = None
 tk_chkbox = None
 tk_dir_entry = None
@@ -67,6 +70,7 @@ tk_min_surtemp_entry = None
 tk_name_str = None
 tk_name_entry = None
 tk_gps_var = None
+tk_defl_var = None
 
 highlight = NamedStyle(name="highlight")
 highlight.fill = PatternFill("solid", fgColor="f5b7b1")
@@ -338,11 +342,17 @@ def highlight_cell(ws, row, col, highlight):
 def write_data_ws(ws, data_list, headers, stn_data_bool=False):
     for col, header in enumerate(headers, start=1):
         ws.cell(row=1, column=col).value = header
+    highlight_cell(ws, 1, len(headers) - 1, highlight)
+    highlight_cell(ws, 1, len(headers) - 2, highlight)
+    if D1_CHECK != None and stn_data_bool:
+        highlight_cell(ws, 1, len(headers) - 3, highlight)
+    highlight_cell(ws, 1, len(headers), highlight)
 
     sect_col = get_col_no(headers, 'SECT_NO')
     station_col = get_col_no(headers, 'Station')
+    d1_col = get_col_no(headers, 'D1')
     for i,row in enumerate(data_list):
-        checks = ['', '', '']
+        checks = ['', '', '', '']
         if station_col != None and sect_col != None:
             stn_chk = check_section_length(row[station_col], row[sect_col])
             if stn_chk:
@@ -352,20 +362,26 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
         if j != False:
             # increasing deflection
             checks[0] = 'O'
-        if sect_col and row[sect_col] in Insufficient_Tests_Dict:
+        if sect_col != None and row[sect_col] in Insufficient_Tests_Dict:
             checks[1] = 'O'
+        if D1_CHECK != None and d1_col != None and d1_col < len(row):
+            d1 = row[d1_col]
+            if d1 > D1_MAX[D1_CHECK]:
+                checks[3] = 'O'
         row.extend(checks)
         ws.append(row)
         if j != False:
             # increasing deflection, highlight this cell
             if not stn_data_bool:
                 highlight_cell(ws, i + 2, j + 1, highlight)
-            style_cell(ws, i + 2, len(row) - 2)
+            style_cell(ws, i + 2, len(row) - 3)
         if len(checks[1]) > 0 :
-            style_cell(ws, i + 2, len(row) - 1)
+            style_cell(ws, i + 2, len(row) - 2)
         if len(checks[2]) > 0:
             highlight_cell(ws, i + 2, station_col + 1, highlight)
-            highlight_cell(ws, i + 2, len(row), highlight)
+            highlight_cell(ws, i + 2, len(row) - 1, highlight)
+        if len(checks[3]) > 0:
+            style_cell(ws, i + 2, len(row))
 
 def write_station_ws(wb):
     # write station & drops data
@@ -508,8 +524,10 @@ def add_columns(data_rows, mdb_file_name):
         mdb_data.append(row)
     return mdb_data
 
-def add_headers(headers):
+def add_headers(headers, stn_data_bool=False):
     headers = ['File'] + [col[0] for col in headers] + ['Decreasing Deflections', 'Insufficient Field Tests', 'Station < Section Length']
+    if stn_data_bool and D1_CHECK != None:
+        headers.append('Deflection Tolerance')
     slab_col = get_col_no(headers, 'SlabID')
     if slab_col != None:
         headers.insert(slab_col + 1, 'SECT_NO')
@@ -523,7 +541,7 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     global Data_Headers, Data_List, Stations_Data_List, Stations_Data_Headers
     if not Data_Headers:
         Data_Headers = add_headers(data_headers)
-        Stations_Data_Headers = add_headers(stn_headers)
+        Stations_Data_Headers = add_headers(stn_headers, stn_data_bool=True)
     mdb_data = add_columns(data_rows, mdb_file_name)
     Data_List.extend(mdb_data)
     stn_data = add_columns(stn_rows, mdb_file_name)
@@ -637,16 +655,17 @@ def query_mdb_data():
 
         data_query = 'SELECT * FROM Stations Inner Join Drops On Stations.StationID = Drops.StationID'
         data_rows = cursor.execute(data_query).fetchall()
-        data_headers = cursor.description
+        if len(data_rows) > 0:
+            data_headers = cursor.description
 
-        data_query = 'SELECT * FROM Stations'
-        stn_rows = cursor.execute(data_query).fetchall()
-        stn_headers = cursor.description
-        
-        cursor.close()
-        connection.close()
-        print(mdb_file_name)
-        process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_headers)
+            data_query = 'SELECT * FROM Stations'
+            stn_rows = cursor.execute(data_query).fetchall()
+            stn_headers = cursor.description
+            
+            cursor.close()
+            connection.close()
+            print(mdb_file_name)
+            process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_headers)
 
 def check_selected_dir(wd):
     if wd:
@@ -713,7 +732,7 @@ def set_selected_file():
 
 def set_global_vars():
     global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE, MDB_FILES, \
-    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP, GPS_CHECK
+    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP, GPS_CHECK, D1_CHECK
     error = False
 
     path = check_selected_dir(tk_dir_entry_str.get())
@@ -800,6 +819,10 @@ def set_global_vars():
         if gps_check != -1:
             GPS_CHECK = gps_check
 
+        defl_check = tk_defl_var.get()
+        if defl_check != -1:
+            D1_CHECK = defl_check
+
         proj_name = tk_name_entry.get()
         if proj_name != '':
             PROJECT_NAME = proj_name.lower() + '_' + datetime.datetime.now().strftime('%Y%m%d')
@@ -848,7 +871,7 @@ def main():
 
 def set_up_gui():
     global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str, tk_dir_button, tk_file_button, tk_run_button, \
-    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry, tk_gps_var
+    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry, tk_gps_var, tk_defl_var
     tk_root = tk.Tk()
     frame = tk.Frame(tk_root, borderwidth=1)
     frame.pack(side=tk.TOP)
@@ -935,6 +958,21 @@ def set_up_gui():
     R1.grid(row=1, column=2)
     R2 = tk.Radiobutton(middle_frame, text="USA (Contiguous)", variable=tk_gps_var, value=4)
     R2.grid(row=2, column=2)
+    tk.Label(middle_frame, text=' ').grid(row=3, column=0, rowspan=3,columnspan=1, padx=5,pady=2)
+    
+    tk_defl_var = tk.IntVar()
+    tk_defl_var.set(-1)
+    ''' ***********uncomment this block and delete the above .set(-1) line for deflection check ************
+    tk.Label(middle_frame, text='Deflection Tolerance Check:\n(optional)', 
+        font = "Helvetica 11").grid(row=7, column=0, rowspan=3,columnspan=1, padx=5,pady=5)
+    R1 = tk.Radiobutton(middle_frame, text="No Deflection Tolerance Check", variable=tk_defl_var, value=-1)
+    R1.grid(row=7, column=1)
+    R1.select()
+    R1 = tk.Radiobutton(middle_frame, text="FWD", variable=tk_defl_var, value=0)
+    R1.grid(row=7, column=2)
+    R2 = tk.Radiobutton(middle_frame, text="HWD", variable=tk_defl_var, value=1)
+    R2.grid(row=7, column=3)
+    '''
     
     #centre the window
     tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
