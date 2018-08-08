@@ -76,7 +76,7 @@ highlight = NamedStyle(name="highlight")
 highlight.fill = PatternFill("solid", fgColor="f5b7b1")
 
 class Summary_Stats:
-    def __init__(self, mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
+    def __init__(self, mdb_file_name, date, num_drops, num_stations, max_station, min_surface_temp, max_surface_temp, 
         min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check, gps_check):
         self.date = date
         self.max_station = max_station
@@ -86,7 +86,8 @@ class Summary_Stats:
         self.max_air_temp = max_air_temp
         self.station_ids = station_ids
         self.mdb_file_name = mdb_file_name
-        self.completed_tests = completed_tests
+        self.num_drops = num_drops
+        self.num_stations = num_stations
         self.sect_no_check = ''
         self.from_time = from_time
         self.to_time = to_time
@@ -308,7 +309,7 @@ def write_summary_ws(wb):
             s.sect_no_check = 'P'
         if not s.station_check and FWD_TEST_LIST_FILE:
             s.station_check = 'P'
-        row = (s.date, s.from_time, s.to_time, s.mdb_file_name, '', '', '', s.completed_tests, '', s.sect_no_check, s.max_station, s.surface_temp_check,
+        row = (s.date, s.from_time, s.to_time, s.mdb_file_name, '', '', '', s.num_stations, s.num_drops, '', s.sect_no_check, s.max_station, s.surface_temp_check,
             s.min_surface_temp, s.max_surface_temp, s.air_temp_check, s.min_air_temp, s.max_air_temp, s.gps_check, s.station_ids or 'P', s.station_check)
         summary_ws.append(row)
         if not s.station_ids:
@@ -549,7 +550,9 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
 
     data_transposed = [*zip(*mdb_data)]
     #summary stats
-    completed_tests = len(mdb_data)
+    num_drops = len(mdb_data)
+    num_stations = len(stn_data)
+
     station_col = get_col_no(Data_Headers, 'Station')
     if station_col != None:
         max_station = round(max(data_transposed[station_col]), 1)
@@ -635,7 +638,7 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
             else:
                 gps_check = 'bad'
 
-    summary_stats = Summary_Stats(mdb_file_name, date, completed_tests, max_station, min_surface_temp, max_surface_temp, 
+    summary_stats = Summary_Stats(mdb_file_name, date, num_drops, num_stations, max_station, min_surface_temp, max_surface_temp, 
         min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check, gps_check)
 
     global Summary_Stats_List
