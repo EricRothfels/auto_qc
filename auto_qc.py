@@ -52,9 +52,10 @@ MAX_SURFACE_TEMP = None
 MIN_SURFACE_TEMP = None
 
 D1_CHECK = None
-D1_MAX = [80, 100]
+D1_UNITS = None
 
 tk_root = None
+middle_frame = None
 tk_chkbox = None
 tk_dir_entry = None
 tk_dir_entry_str = None
@@ -71,7 +72,7 @@ tk_name_str = None
 tk_name_entry = None
 tk_gps_var = None
 tk_defl_var = None
-
+tk_defl_units_var = None
 highlight = NamedStyle(name="highlight")
 highlight.fill = PatternFill("solid", fgColor="f5b7b1")
 
@@ -313,11 +314,11 @@ def write_summary_ws(wb):
             s.min_surface_temp, s.max_surface_temp, s.air_temp_check, s.min_air_temp, s.max_air_temp, s.gps_check, s.station_ids or 'P', s.station_check)
         summary_ws.append(row)
         if not s.station_ids:
-            style_cell(summary_ws, i + 2, 19)
-        if s.sect_no_check == 'P' and FWD_TEST_LIST_FILE:
-            style_cell(summary_ws, i + 2, 10)
-        if s.station_check == 'P' and FWD_TEST_LIST_FILE:
             style_cell(summary_ws, i + 2, 20)
+        if s.sect_no_check == 'P' and FWD_TEST_LIST_FILE:
+            style_cell(summary_ws, i + 2, 11)
+        if s.station_check == 'P' and FWD_TEST_LIST_FILE:
+            style_cell(summary_ws, i + 2, 21)
 
 def in_station_id_dict(row, headers, stn_data_bool=False):
     file_col = get_col_no(headers, 'File')
@@ -345,7 +346,7 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
         ws.cell(row=1, column=col).value = header
     highlight_cell(ws, 1, len(headers) - 1, highlight)
     highlight_cell(ws, 1, len(headers) - 2, highlight)
-    if D1_CHECK != None and stn_data_bool:
+    if D1_CHECK != None and not stn_data_bool:
         highlight_cell(ws, 1, len(headers) - 3, highlight)
     highlight_cell(ws, 1, len(headers), highlight)
 
@@ -365,9 +366,9 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
             checks[0] = 'O'
         if sect_col != None and row[sect_col] in Insufficient_Tests_Dict:
             checks[1] = 'O'
-        if D1_CHECK != None and d1_col != None and d1_col < len(row):
+        if D1_CHECK != None and not stn_data_bool and d1_col != None and d1_col < len(row):
             d1 = row[d1_col]
-            if d1 > D1_MAX[D1_CHECK]:
+            if d1 > D1_CHECK * D1_UNITS:
                 checks[3] = 'O'
         row.extend(checks)
         ws.append(row)
@@ -527,7 +528,7 @@ def add_columns(data_rows, mdb_file_name):
 
 def add_headers(headers, stn_data_bool=False):
     headers = ['File'] + [col[0] for col in headers] + ['Decreasing Deflections', 'Insufficient Field Tests', 'Station < Section Length']
-    if stn_data_bool and D1_CHECK != None:
+    if not stn_data_bool and D1_CHECK != None:
         headers.append('Deflection Tolerance')
     slab_col = get_col_no(headers, 'SlabID')
     if slab_col != None:
@@ -735,7 +736,7 @@ def set_selected_file():
 
 def set_global_vars():
     global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE, MDB_FILES, \
-    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP, GPS_CHECK, D1_CHECK
+    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP, GPS_CHECK, D1_CHECK, D1_UNITS
     error = False
 
     path = check_selected_dir(tk_dir_entry_str.get())
@@ -801,6 +802,9 @@ def set_global_vars():
         tk_min_airtemp_entry.config(state='readonly')
         tk_max_surtemp_entry.config(state='readonly')
         tk_min_surtemp_entry.config(state='readonly')
+        for child in middle_frame.winfo_children():
+            if child.winfo_class() == 'Radiobutton':
+                child['state'] = 'disabled'
 
         if max_airtemp != '':
             MAX_AIR_TEMP = float(max_airtemp)
@@ -825,6 +829,7 @@ def set_global_vars():
         defl_check = tk_defl_var.get()
         if defl_check != -1:
             D1_CHECK = defl_check
+            D1_UNITS = tk_defl_units_var.get()
 
         proj_name = tk_name_entry.get()
         if proj_name != '':
@@ -874,7 +879,7 @@ def main():
 
 def set_up_gui():
     global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str, tk_dir_button, tk_file_button, tk_run_button, \
-    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry, tk_gps_var, tk_defl_var
+    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry, tk_gps_var, tk_defl_var, tk_defl_units_var, middle_frame
     tk_root = tk.Tk()
     frame = tk.Frame(tk_root, borderwidth=1)
     frame.pack(side=tk.TOP)
@@ -964,18 +969,22 @@ def set_up_gui():
     tk.Label(middle_frame, text=' ').grid(row=3, column=0, rowspan=3,columnspan=1, padx=5,pady=2)
     
     tk_defl_var = tk.IntVar()
-    tk_defl_var.set(-1)
-    ''' ***********uncomment this block and delete the above .set(-1) line for deflection check ************
     tk.Label(middle_frame, text='Deflection Tolerance Check:\n(optional)', 
         font = "Helvetica 11").grid(row=7, column=0, rowspan=3,columnspan=1, padx=5,pady=5)
     R1 = tk.Radiobutton(middle_frame, text="No Deflection Tolerance Check", variable=tk_defl_var, value=-1)
     R1.grid(row=7, column=1)
     R1.select()
-    R1 = tk.Radiobutton(middle_frame, text="FWD", variable=tk_defl_var, value=0)
-    R1.grid(row=7, column=2)
-    R2 = tk.Radiobutton(middle_frame, text="HWD", variable=tk_defl_var, value=1)
-    R2.grid(row=7, column=3)
-    '''
+    R1 = tk.Radiobutton(middle_frame, text="FWD", variable=tk_defl_var, value=80)
+    R1.grid(row=8, column=1)
+    R2 = tk.Radiobutton(middle_frame, text="HWD", variable=tk_defl_var, value=100)
+    R2.grid(row=9, column=1)
+    tk_defl_units_var = tk.IntVar()
+    R2 = tk.Radiobutton(middle_frame, text="Microns (micrometers)", variable=tk_defl_units_var, value=25)
+    R2.grid(row=8, column=2)
+    R2.select()
+    R1 = tk.Radiobutton(middle_frame, text="Mils (milli inches)", variable=tk_defl_units_var, value=1)
+    R1.grid(row=9, column=2)
+    
     
     #centre the window
     tk_root.eval('tk::PlaceWindow %s center' % tk_root.winfo_pathname(tk_root.winfo_id()))
