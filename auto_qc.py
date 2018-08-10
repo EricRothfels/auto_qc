@@ -50,6 +50,7 @@ MAX_AIR_TEMP = None
 MIN_AIR_TEMP = None
 MAX_SURFACE_TEMP = None
 MIN_SURFACE_TEMP = None
+DROP_FORCE = [None] * 4
 
 D1_CHECK = None
 D1_UNITS = None
@@ -73,6 +74,7 @@ tk_name_entry = None
 tk_gps_var = None
 tk_defl_var = None
 tk_defl_units_var = None
+tk_force_d1_entry = tk_force_d2_entry = tk_force_d3_entry = tk_force_d4_entry = None
 highlight = NamedStyle(name="highlight")
 highlight.fill = PatternFill("solid", fgColor="f5b7b1")
 
@@ -368,7 +370,10 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
             checks[1] = 'O'
         if D1_CHECK != None and not stn_data_bool and d1_col != None and d1_col < len(row):
             d1 = row[d1_col]
-            if d1 > D1_CHECK * D1_UNITS:
+            max_d1 = D1_CHECK
+            if D1_UNITS == 1:
+                max_d1 *= 25.4
+            if d1 > max_d1:
                 checks[3] = 'O'
         row.extend(checks)
         ws.append(row)
@@ -473,6 +478,14 @@ def write_bad_sections_kml():
     if row_dict:
         write_kml(os.path.join(QC_PATH, PROJECT_NAME + '_sections_with_insufficient_tests.kml'), 'red', row_dict)
 
+def check_drop_force(force, drop_no):
+    ret = True
+    if drop_no >= 0 and drop_no < len(DROP_FORCE):
+        drop_force = DROP_FORCE[drop_no]
+        if isnumber(force) and isnumber(drop_force) and (force > drop_force * 1.1 or force < drop_force * 0.9):
+            ret = False
+    return ret
+
 def check_coords(lats,longs):
     if not (lats and longs):
         return False
@@ -538,6 +551,32 @@ def add_headers(headers, stn_data_bool=False):
             if rm_no_col != None:
                 headers.insert(slab_col + 2, 'RM_NO')
     return headers
+
+def add_checks():
+    sect_col = get_col_no(headers, 'SECT_NO')
+    station_col = get_col_no(headers, 'Station')
+    d1_col = get_col_no(headers, 'D1')
+    for i,row in enumerate(data_list):
+        checks = ['', '', '', '']
+        if station_col != None and sect_col != None:
+            stn_chk = check_section_length(row[station_col], row[sect_col])
+            if stn_chk:
+                # station > length, highlight bad
+                checks[2] = 'Section Length: ' + stn_chk
+        j = in_station_id_dict(row, headers, stn_data_bool)
+        if j != False:
+            # increasing deflection
+            checks[0] = 'O'
+        if sect_col != None and row[sect_col] in Insufficient_Tests_Dict:
+            checks[1] = 'O'
+        if D1_CHECK != None and not stn_data_bool and d1_col != None and d1_col < len(row):
+            d1 = row[d1_col]
+            max_d1 = D1_CHECK
+            if D1_UNITS == 1:
+                max_d1 *= 25.4
+            if d1 > max_d1:
+                checks[3] = 'O'
+        row.extend(checks)
 
 def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_headers):
     global Data_Headers, Data_List, Stations_Data_List, Stations_Data_Headers
@@ -632,12 +671,29 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
     if GPS_CHECK != None:
         lat_col = get_col_no(Data_Headers, 'Latitude')
         long_col = get_col_no(Data_Headers, 'Longitude')
-        if lat_col and long_col and lat_col < len(data_transposed) and long_col < len(data_transposed):
+        if lat_col != None and long_col != None and lat_col < len(data_transposed) and long_col < len(data_transposed):
             gps_check = check_coords(data_transposed[lat_col], data_transposed[long_col])
             if gps_check:
                 gps_check = 'good'
             else:
                 gps_check = 'bad'
+
+    if D1_CHECK != None:
+        stationid_col = get_col_no(Data_Headers, 'StationID')
+        force_col = get_col_no(Data_Headers, 'Force')
+        if stationid_col != None and force_col != None and stationid_col < len(data_transposed) and force_col < len(data_transposed):
+            i = 0
+            stn_id = None
+            for row in mdb_data:
+                new_stn_id = row[stationid_col]
+                if stn_id != new_stn_id:
+                    i=0
+                else:
+                    i += 1
+                stn_id = new_stn_id
+                d1_check = check_drop_force(row[force_col], i)
+
+
 
     summary_stats = Summary_Stats(mdb_file_name, date, num_drops, num_stations, max_station, min_surface_temp, max_surface_temp, 
         min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check, gps_check)
@@ -736,7 +792,8 @@ def set_selected_file():
 
 def set_global_vars():
     global tk_root, QC_PATH, FWD_TEST_LIST_FILE, PROJECT_NAME, MAKE_ARCGIS_FILE, MDB_FILES, \
-    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP, GPS_CHECK, D1_CHECK, D1_UNITS
+    MAX_AIR_TEMP, MIN_AIR_TEMP, MAX_SURFACE_TEMP, MIN_SURFACE_TEMP, GPS_CHECK, D1_CHECK, D1_UNITS, \
+    DROP_FORCE
     error = False
 
     path = check_selected_dir(tk_dir_entry_str.get())
@@ -790,6 +847,23 @@ def set_global_vars():
             tk_max_surtemp_entry.config(bg='LightPink1')
             tk_min_surtemp_entry.config(bg='LightPink1')
 
+    force_d1 = tk_force_d1_entry.get()
+    force_d2 = tk_force_d2_entry.get()
+    force_d3 = tk_force_d3_entry.get()
+    force_d4 = tk_force_d4_entry.get()
+    if force_d1 != '' and not is_number(force_d1):
+        tk_force_d1_entry.config(bg='LightPink1')
+        error = True
+    if force_d2 != '' and not is_number(force_d2):
+        tk_force_d2_entry.config(bg='LightPink1')
+        error = True
+    if force_d3 != '' and not is_number(force_d3):
+        tk_force_d3_entry.config(bg='LightPink1')
+        error = True
+    if force_d4 != '' and not is_number(force_d4):
+        tk_force_d4_entry.config(bg='LightPink1')
+        error = True
+
     if error == False:
         tk_chkbox.config(state='disable')
         tk_dir_entry.config(state='readonly')
@@ -814,6 +888,15 @@ def set_global_vars():
             MAX_SURFACE_TEMP = float(max_surtemp)
         if min_surtemp != '':
             MIN_SURFACE_TEMP = float(min_surtemp)
+
+        if force_d1 != '':
+            DROP_FORCE[0] = float(force_d1)
+        if force_d2 != '':
+            DROP_FORCE[1] = float(force_d2)
+        if force_d3 != '':
+            DROP_FORCE[2] = float(force_d3)
+        if force_d4 != '':
+            DROP_FORCE[3] = float(force_d4)
 
         QC_PATH = path
         if test_list_file:
@@ -879,12 +962,15 @@ def main():
 
 def set_up_gui():
     global tk_root, tk_chkbox, tk_dir_entry, tk_file_entry, tk_file_entry_str, tk_dir_entry_str, tk_dir_button, tk_file_button, tk_run_button, \
-    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry, tk_gps_var, tk_defl_var, tk_defl_units_var, middle_frame
+    tk_max_airtemp_entry, tk_min_airtemp_entry, tk_max_surtemp_entry, tk_min_surtemp_entry, tk_name_str, tk_name_entry, tk_gps_var, tk_defl_var, \
+    tk_force_d1_entry, tk_force_d2_entry, tk_force_d3_entry, tk_force_d4_entry, tk_defl_units_var, middle_frame
     tk_root = tk.Tk()
     frame = tk.Frame(tk_root, borderwidth=1)
     frame.pack(side=tk.TOP)
     middle_frame = tk.Frame(tk_root, borderwidth=10)
     middle_frame.pack()
+    mid_frame = tk.Frame(tk_root, borderwidth=2)
+    mid_frame.pack()
     bottom_frame = tk.Frame(tk_root, borderwidth=2)
     bottom_frame.pack(side=tk.BOTTOM)
 
@@ -899,9 +985,7 @@ def set_up_gui():
     tk_dir_button.grid(row=1, column=6, sticky=tk.W, padx=15,pady=5)
     tk_file_button = tk.Button(frame, text='Browse', font='Helvetica 12', command=set_selected_file)
     tk_file_button.grid(row=3, column=6, sticky=tk.W, padx=15,pady=5)
-    tk_run_button = tk.Button(bottom_frame, text='Run', font='Helvetica 14', command=set_global_vars)
-    tk_run_button.grid(row=10, column=7, sticky=tk.W, padx=15,pady=15)
-    
+        
     tk.Label(frame, text='Project Folder:', 
         font = "Helvetica 12").grid(row=1, column=0, columnspan=1, padx=5,pady=5)
     tk.Label(frame, text='FWD Test List File:\n(optional)', 
@@ -928,18 +1012,18 @@ def set_up_gui():
         font = "Helvetica 11").grid(row=1, column=2, columnspan=1, padx=5,pady=5)
     tk.Label(bottom_frame, text='Max:', 
         font = "Helvetica 11").grid(row=1, column=4, columnspan=1, padx=5,pady=5)
-    tk_max_airtemp_str = tk.StringVar()
-    tk_max_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_airtemp_str, width=10, readonlybackground='grey85')
-    tk_max_airtemp_entry.grid(row=0, column=5, columnspan=1)
     tk_min_airtemp_str = tk.StringVar()
     tk_min_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_airtemp_str, width=10, readonlybackground='grey85')
     tk_min_airtemp_entry.grid(row=0, column=3, columnspan=1)
-    tk_max_surtemp_str = tk.StringVar()
-    tk_max_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_surtemp_str, width=10, readonlybackground='grey85')
-    tk_max_surtemp_entry.grid(row=1, column=5, columnspan=1)
+    tk_max_airtemp_str = tk.StringVar()
+    tk_max_airtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_airtemp_str, width=10, readonlybackground='grey85')
+    tk_max_airtemp_entry.grid(row=0, column=5, columnspan=1)
     tk_min_surtemp_str = tk.StringVar()
     tk_min_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_min_surtemp_str, width=10, readonlybackground='grey85')
     tk_min_surtemp_entry.grid(row=1, column=3, columnspan=1)
+    tk_max_surtemp_str = tk.StringVar()
+    tk_max_surtemp_entry = tk.Entry(bottom_frame, textvariable=tk_max_surtemp_str, width=10, readonlybackground='grey85')
+    tk_max_surtemp_entry.grid(row=1, column=5, columnspan=1)
     tk.Label(bottom_frame, text='Output File Name:\n(optional)', 
         font = "Helvetica 11").grid(row=2, column=1, columnspan=1, padx=5,pady=5)
     tk_name_str = tk.StringVar()
@@ -949,6 +1033,8 @@ def set_up_gui():
     tk_chkbox = tk.Checkbutton(bottom_frame, text="Make ArcGIS Shape File from FWD Tests", variable=v)
     tk_chkbox.var = v
     tk_chkbox.grid(row=3, column=2, columnspan=3, padx=15,pady=20)
+    tk_run_button = tk.Button(bottom_frame, text='Run', font='Helvetica 14', command=set_global_vars)
+    tk_run_button.grid(row=10, column=7, sticky=tk.W, padx=15,pady=15)
 
     tk.Label(middle_frame, text='Location of FWD Tests:\nfor GPS Check\n(optional)', 
         font = "Helvetica 11").grid(row=0, column=0, rowspan=3,columnspan=1, padx=5,pady=5)
@@ -979,11 +1065,36 @@ def set_up_gui():
     R2 = tk.Radiobutton(middle_frame, text="HWD", variable=tk_defl_var, value=100)
     R2.grid(row=9, column=1)
     tk_defl_units_var = tk.IntVar()
-    R2 = tk.Radiobutton(middle_frame, text="Microns (micrometers)", variable=tk_defl_units_var, value=25)
+    R2 = tk.Radiobutton(middle_frame, text="Microns (micrometers)", variable=tk_defl_units_var, value=1)
     R2.grid(row=8, column=2)
     R2.select()
-    R1 = tk.Radiobutton(middle_frame, text="Mils (milli inches)", variable=tk_defl_units_var, value=1)
+    R1 = tk.Radiobutton(middle_frame, text="Mils (milli inches)", variable=tk_defl_units_var, value=0)
     R1.grid(row=9, column=2)
+
+    tk.Label(mid_frame, text=' ').grid(row=9, column=0, rowspan=3,columnspan=1, padx=5,pady=2)
+    tk.Label(mid_frame, text='Specified Drop Force:\n(optional)', 
+        font = "Helvetica 11").grid(row=10, column=1, columnspan=1, padx=5,pady=5)
+    tk.Label(mid_frame, text='Drop 1:', 
+        font = "Helvetica 11").grid(row=10, column=2, columnspan=1, padx=5,pady=5)
+    tk.Label(mid_frame, text='Drop 2:', 
+        font = "Helvetica 11").grid(row=10, column=4, columnspan=1, padx=5,pady=5)
+    tk.Label(mid_frame, text='Drop 3:', 
+        font = "Helvetica 11").grid(row=10, column=6, columnspan=1, padx=5,pady=5)
+    tk.Label(mid_frame, text='Drop 4:', 
+        font = "Helvetica 11").grid(row=10, column=8, columnspan=1, padx=5,pady=5)
+    tk_force_d1_str = tk.StringVar()
+    tk_force_d1_entry = tk.Entry(mid_frame, textvariable=tk_force_d1_str, width=6, readonlybackground='grey85')
+    tk_force_d1_entry.grid(row=10, column=3, columnspan=1)
+    tk_force_d2_str = tk.StringVar()
+    tk_force_d2_entry = tk.Entry(mid_frame, textvariable=tk_force_d2_str, width=6, readonlybackground='grey85')
+    tk_force_d2_entry.grid(row=10, column=5, columnspan=1)
+    tk_force_d3_str = tk.StringVar()
+    tk_force_d3_entry = tk.Entry(mid_frame, textvariable=tk_force_d3_str, width=6, readonlybackground='grey85')
+    tk_force_d3_entry.grid(row=10, column=7, columnspan=1)
+    tk_force_d4_str = tk.StringVar()
+    tk_force_d4_entry = tk.Entry(mid_frame, textvariable=tk_force_d4_str, width=6, readonlybackground='grey85')
+    tk_force_d4_entry.grid(row=10, column=9, columnspan=1)
+    tk.Label(mid_frame, text=' ').grid(row=11, column=0, rowspan=3,columnspan=1, padx=5,pady=2)
     
     
     #centre the window
