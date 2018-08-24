@@ -351,44 +351,30 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
     if D1_CHECK != None and not stn_data_bool:
         highlight_cell(ws, 1, len(headers) - 3, highlight)
     highlight_cell(ws, 1, len(headers), highlight)
-
-    sect_col = get_col_no(headers, 'SECT_NO')
     station_col = get_col_no(headers, 'Station')
-    d1_col = get_col_no(headers, 'D1')
+
+    defl_col = get_col_no(headers, 'Decreasing Deflections')
+    tests_col = get_col_no(headers, 'Insufficient Field Tests')
+    length_col = get_col_no(headers, 'Station < Section Length')
+    defl_tol_col = get_col_no(headers, 'Deflection Tolerance')
+    drop_force_col = get_col_no(headers, 'Drop Force within Specification')
+
     for i,row in enumerate(data_list):
-        checks = ['', '', '', '']
-        if station_col != None and sect_col != None:
-            stn_chk = check_section_length(row[station_col], row[sect_col])
-            if stn_chk:
-                # station > length, highlight bad
-                checks[2] = 'Section Length: ' + stn_chk
-        j = in_station_id_dict(row, headers, stn_data_bool)
-        if j != False:
-            # increasing deflection
-            checks[0] = 'O'
-        if sect_col != None and row[sect_col] in Insufficient_Tests_Dict:
-            checks[1] = 'O'
-        if D1_CHECK != None and not stn_data_bool and d1_col != None and d1_col < len(row):
-            d1 = row[d1_col]
-            max_d1 = D1_CHECK
-            if D1_UNITS == 1:
-                max_d1 *= 25.4
-            if d1 > max_d1:
-                checks[3] = 'O'
-        row.extend(checks)
         ws.append(row)
-        if j != False:
+        if defl_col != None and len(row[defl_col]) > 0:
             # increasing deflection, highlight this cell
             if not stn_data_bool:
-                highlight_cell(ws, i + 2, j + 1, highlight)
-            style_cell(ws, i + 2, len(row) - 3)
-        if len(checks[1]) > 0 :
-            style_cell(ws, i + 2, len(row) - 2)
-        if len(checks[2]) > 0:
+                highlight_cell(ws, i + 2, row[defl_col] + 1, highlight)
+            style_cell(ws, i + 2, defl_col + 1)
+        if tests_col != None and row[tests_col] == 'O':
+            style_cell(ws, i + 2, tests_col + 1)
+        if defl_tol_col != None and row[defl_tol_col] == 'O':
+            style_cell(ws, i + 2, defl_tol_col + 1)
+        if drop_force_col != None and row[drop_force_col] == 'O':
+            style_cell(ws, i + 2, drop_force_col + 1)
+        if length_col != None and len(row[length_col]) > 0:
             highlight_cell(ws, i + 2, station_col + 1, highlight)
-            highlight_cell(ws, i + 2, len(row) - 1, highlight)
-        if len(checks[3]) > 0:
-            style_cell(ws, i + 2, len(row))
+            highlight_cell(ws, i + 2, length_col + 1, highlight)
 
 def write_station_ws(wb):
     # write station & drops data
@@ -411,15 +397,15 @@ def write_excel_file():
     return qc_file
 
 def write_kml(file_path, color, row_dict=None):
-    sect_col = get_col_no(Data_Headers, 'SECT_NO')
-    slab_col = get_col_no(Data_Headers, 'SlabID')
-    lat_col = get_col_no(Data_Headers, 'Latitude')
-    long_col = get_col_no(Data_Headers, 'Longitude')
+    sect_col = get_col_no(Stations_Data_Headers, 'SECT_NO')
+    slab_col = get_col_no(Stations_Data_Headers, 'SlabID')
+    lat_col = get_col_no(Stations_Data_Headers, 'Latitude')
+    long_col = get_col_no(Stations_Data_Headers, 'Longitude')
 
-    file_col = get_col_no(Data_Headers, 'FILE')
-    stationID_col = get_col_no(Data_Headers, 'StationID')
-    station_col = get_col_no(Data_Headers, 'Station')
-    lane_col = get_col_no(Data_Headers, 'Lane')
+    file_col = get_col_no(Stations_Data_Headers, 'FILE')
+    stationID_col = get_col_no(Stations_Data_Headers, 'StationID')
+    station_col = get_col_no(Stations_Data_Headers, 'Station')
+    lane_col = get_col_no(Stations_Data_Headers, 'Lane')
     if not (lat_col and long_col):
         return
 
@@ -456,19 +442,19 @@ def write_bad_drops_kml():
         return
     row_dict = {}
     for i,row in enumerate(Data_List):
-        if in_station_id_dict(row, Data_Headers):
+        if in_station_id_dict(row, Stations_Data_Headers):
             row_dict[i] = None
     if row_dict:
         write_kml(os.path.join(QC_PATH, PROJECT_NAME + '_stations_with_increasing_deflection.kml'), 'red', row_dict)
 
 def write_bad_sections_kml():
-    sect_col = get_col_no(Data_Headers, 'SECT_NO')
-    stationID_col = get_col_no(Data_Headers, 'StationID')
+    sect_col = get_col_no(Stations_Data_Headers, 'SECT_NO')
+    stationID_col = get_col_no(Stations_Data_Headers, 'StationID')
     if not (Insufficient_Tests_Dict and sect_col and stationID_col):
         return
     row_dict = {}
     section_no_dict = {}
-    file_col = get_col_no(Data_Headers, 'File')
+    file_col = get_col_no(Stations_Data_Headers, 'File')
     
     for i,row in enumerate(Data_List):
         key = (row[sect_col], row[stationID_col], row[file_col])
@@ -482,7 +468,7 @@ def check_drop_force(force, drop_no):
     ret = True
     if drop_no >= 0 and drop_no < len(DROP_FORCE):
         drop_force = DROP_FORCE[drop_no]
-        if isnumber(force) and isnumber(drop_force) and (force > drop_force * 1.1 or force < drop_force * 0.9):
+        if is_number(force) and is_number(drop_force) and (force > drop_force * 1.1 or force < drop_force * 0.9):
             ret = False
     return ret
 
@@ -546,7 +532,7 @@ def add_columns(data_rows, mdb_file_name, stn_data_bool=False):
     for row in data_rows:
         row = [mdb_file_name] + [x for x in row] + ['', '', '', '']
         if not stn_data_bool and D1_CHECK != None:
-            headers.append('')
+            row.append('')
         if slab_col != None and len(row) > slab_col and sect_col != None and return_run_col != None:
             slabID, sect_no, return_run = get_sect_info(row[slab_col])
             row[slab_col] = slabID
@@ -582,17 +568,17 @@ def add_checks(data_list, headers, stn_data_bool=False):
     tests_col = get_col_no(headers, 'Insufficient Field Tests')
     length_col = get_col_no(headers, 'Station < Section Length')
     defl_tol_col = get_col_no(headers, 'Deflection Tolerance')
-    drop_force_col = get_col_no(Data_Headers, 'Drop Force within Specification')
+    drop_force_col = get_col_no(headers, 'Drop Force within Specification')
     
     for row in data_list:
         if station_col != None and sect_col != None and length_col != None:
             stn_chk = check_section_length(row[station_col], row[sect_col])
             if stn_chk != None and type(stn_chk) == str:
                 row[length_col] = 'Section Length: ' + stn_chk
-        j = in_station_id_dict(row, headers, stn_data_bool)
-        if j != False and defl_col != None:
+        incr_col = in_station_id_dict(row, headers, stn_data_bool)
+        if col != False and defl_col != None:
             # increasing deflection
-            row[defl_col] = 'O'
+            row[defl_col] = incr_col
         if sect_col != None and tests_col != None and row[sect_col] in Insufficient_Tests_Dict:
             row[tests_col] = 'O'
         if D1_CHECK != None and defl_tol_col != None and not stn_data_bool and d1_col != None and d1_col < len(row):
@@ -604,12 +590,12 @@ def add_checks(data_list, headers, stn_data_bool=False):
                 row[defl_tol_col] = 'O'
 
     if D1_CHECK != None:
-        stationid_col = get_col_no(Data_Headers, 'StationID')
-        force_col = get_col_no(Data_Headers, 'Force')
-        if stationid_col != None and force_col != None and stationid_col < len(data_transposed) and force_col < len(data_transposed):
+        stationid_col = get_col_no(headers, 'StationID')
+        force_col = get_col_no(headers, 'Force')
+        if stationid_col != None and force_col != None and stationid_col < len(row) and force_col < len(row):
             i = 0
             stn_id = None
-            for row in mdb_data:
+            for row in data_list:
                 new_stn_id = row[stationid_col]
                 if stn_id != new_stn_id:
                     i=0
@@ -617,6 +603,8 @@ def add_checks(data_list, headers, stn_data_bool=False):
                     i += 1
                 stn_id = new_stn_id
                 d1_check = check_drop_force(row[force_col], i)
+                if d1_check == False:
+                    row[drop_force_col] = 'O'
 
 
 def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_headers):
@@ -719,29 +707,14 @@ def process_mdb_data(mdb_file_name, data_rows, data_headers, stn_rows, stn_heade
             else:
                 gps_check = 'bad'
 
-    if D1_CHECK != None:
-        stationid_col = get_col_no(Data_Headers, 'StationID')
-        force_col = get_col_no(Data_Headers, 'Force')
-        if stationid_col != None and force_col != None and stationid_col < len(data_transposed) and force_col < len(data_transposed):
-            i = 0
-            stn_id = None
-            for row in mdb_data:
-                new_stn_id = row[stationid_col]
-                if stn_id != new_stn_id:
-                    i=0
-                else:
-                    i += 1
-                stn_id = new_stn_id
-                d1_check = check_drop_force(row[force_col], i)
-
-
-
     summary_stats = Summary_Stats(mdb_file_name, date, num_drops, num_stations, max_station, min_surface_temp, max_surface_temp, 
         min_air_temp, max_air_temp, station_ids, from_time, to_time, station_check, surface_temp_check, air_temp_check, gps_check)
 
     global Summary_Stats_List
     Summary_Stats_List.append(summary_stats)
     add_to_section_dict(mdb_data, mdb_file_name)
+    add_checks(mdb_data, Data_Headers, stn_data_bool=False)
+    add_checks(stn_data, Stations_Data_Headers, stn_data_bool=False)
 
 def query_mdb_data():
     DRV = '{Microsoft Access Driver (*.mdb)}'
