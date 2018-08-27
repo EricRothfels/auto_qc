@@ -351,6 +351,8 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
         highlight_cell(ws, 1, len(headers) - 3, highlight)
     highlight_cell(ws, 1, len(headers), highlight)
     station_col = get_col_no(headers, 'Station')
+    force_col = get_col_no(headers, 'Force')
+    d1_col = get_col_no(headers, 'D1')
 
     defl_col = get_col_no(headers, 'Decreasing Deflections')
     tests_col = get_col_no(headers, 'Insufficient Field Tests')
@@ -370,8 +372,12 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
             style_cell(ws, i + 2, tests_col + 1)
         if defl_tol_col != None and row[defl_tol_col] == 'O':
             style_cell(ws, i + 2, defl_tol_col + 1)
+            if d1_col != None:
+                highlight_cell(ws, i + 2, d1_col + 1, highlight)
         if drop_force_col != None and row[drop_force_col] == 'O':
             style_cell(ws, i + 2, drop_force_col + 1)
+            if force_col != None:
+                highlight_cell(ws, i + 2, force_col + 1, highlight)
         if length_col != None and type(row[length_col]) == str and len(row[length_col]) > 0:
             highlight_cell(ws, i + 2, station_col + 1, highlight)
             highlight_cell(ws, i + 2, length_col + 1, highlight)
