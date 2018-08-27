@@ -184,8 +184,7 @@ def check_test_list_file(file):
             for j, col in enumerate(range(ws.ncols)):
                 header_list.append(ws.cell_value(0, j))
             sect_no_col = get_col_no(header_list, ['RT_NO', 'SECT_NO', 'FWD_NO'])
-            total_tests_col = get_col_no(header_list, ['TOTAL TESTS','TOTAL', 'TOT_TEST'])
-            if sect_no_col != None and total_tests_col != None:
+            if sect_no_col != None:
                 return ws
     return False
 
@@ -361,10 +360,11 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
 
     for i,row in enumerate(data_list):
         ws.append(row)
-        if defl_col != None and len(row[defl_col]) > 0:
+        if defl_col != None and row[defl_col] == 'O':
             # increasing deflection, highlight this cell
-            if not stn_data_bool:
-                highlight_cell(ws, i + 2, row[defl_col] + 1, highlight)
+            incr_col = in_station_id_dict(row, headers, stn_data_bool)
+            if incr_col != False and not stn_data_bool:
+                highlight_cell(ws, i + 2, incr_col + 1, highlight)
             style_cell(ws, i + 2, defl_col + 1)
         if tests_col != None and row[tests_col] == 'O':
             style_cell(ws, i + 2, tests_col + 1)
@@ -372,7 +372,7 @@ def write_data_ws(ws, data_list, headers, stn_data_bool=False):
             style_cell(ws, i + 2, defl_tol_col + 1)
         if drop_force_col != None and row[drop_force_col] == 'O':
             style_cell(ws, i + 2, drop_force_col + 1)
-        if length_col != None and len(row[length_col]) > 0:
+        if length_col != None and type(row[length_col]) == str and len(row[length_col]) > 0:
             highlight_cell(ws, i + 2, station_col + 1, highlight)
             highlight_cell(ws, i + 2, length_col + 1, highlight)
 
@@ -576,9 +576,9 @@ def add_checks(data_list, headers, stn_data_bool=False):
             if stn_chk != None and type(stn_chk) == str:
                 row[length_col] = 'Section Length: ' + stn_chk
         incr_col = in_station_id_dict(row, headers, stn_data_bool)
-        if col != False and defl_col != None:
+        if incr_col != False and defl_col != None:
             # increasing deflection
-            row[defl_col] = incr_col
+            row[defl_col] = 'O'
         if sect_col != None and tests_col != None and row[sect_col] in Insufficient_Tests_Dict:
             row[tests_col] = 'O'
         if D1_CHECK != None and defl_tol_col != None and not stn_data_bool and d1_col != None and d1_col < len(row):
@@ -893,6 +893,10 @@ def set_global_vars():
         for child in middle_frame.winfo_children():
             if child.winfo_class() == 'Radiobutton':
                 child['state'] = 'disabled'
+        tk_force_d1_entry.config(state='readonly')
+        tk_force_d2_entry.config(state='readonly')
+        tk_force_d3_entry.config(state='readonly')
+        tk_force_d4_entry.config(state='readonly')
 
         if max_airtemp != '':
             MAX_AIR_TEMP = float(max_airtemp)
